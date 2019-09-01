@@ -1,0 +1,4 @@
+(
+    title: "Hello Voxel",
+    dimensions: Some((480, 320)),
+)
