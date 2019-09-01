@@ -31,7 +31,7 @@ pub trait VoxelData: 'static + Clone + Send + Sync {
 }
 
 /// The required functionality to triangulate voxels.
-pub trait Voxel<T: VoxelData>: 'static + Send + Sync {
+pub trait Voxel<T: VoxelData>: 'static + Clone + Send + Sync {
     /// Returns whether this voxel is visible, i.e. if it has geometry.
     fn visible(&self) -> bool;
 
@@ -52,6 +52,13 @@ pub trait Voxel<T: VoxelData>: 'static + Send + Sync {
 pub trait AsVoxel: Send + Sync {
     type Data: VoxelData;
     type Voxel: Voxel<Self::Data> + Clone;
+}
+
+pub trait AsNestedVoxel: AsVoxel {
+    type ChildData: VoxelData;
+    type Child: Voxel<Self::ChildData>;
+
+    fn from_iter<I: IntoIterator<Item=Self::Child>>(data: Self::Data, iter: I) -> Self::Voxel;
 }
 
 /// A single voxel with nothing special.
@@ -101,11 +108,34 @@ impl<T: VoxelData> AsVoxel for T {
     type Voxel = Nested<T, (), Simple>;
 }
 
+impl<T: VoxelData> AsNestedVoxel for T {
+    type ChildData = ();
+    type Child = Simple;
+
+    fn from_iter<I: IntoIterator<Item=Self::Child>>(data: T, iter: I) -> Self::Voxel {
+        Nested::Detail {
+            data,
+            detail: Arc::new(Vec::from_iter(iter.into_iter().take(Const::<T>::COUNT))),
+        }
+    }
+}
+
 macro_rules! define_chain {
     ($head:ident, $($tail:ident),+) => {
         impl<$head: VoxelData, $($tail: VoxelData),+> AsVoxel for ($head, $($tail),+) where ($($tail),+): AsVoxel {
             type Data = $head;
             type Voxel = Nested<$head, <($($tail),+) as AsVoxel>::Data, <($($tail),+) as AsVoxel>::Voxel>;
+        }
+        impl<$head: VoxelData, $($tail: VoxelData),+> AsNestedVoxel for ($head, $($tail),+) where ($($tail),+): AsVoxel {
+            type ChildData = <($($tail),+) as AsVoxel>::Data;
+            type Child = <($($tail),+) as AsVoxel>::Voxel;
+
+            fn from_iter<I: IntoIterator<Item=Self::Child>>(data: Self::Data, iter: I) -> Self::Voxel {
+                Nested::Detail {
+                    data,
+                    detail: Arc::new(Vec::from_iter(iter.into_iter().take(Const::<Self::Data>::COUNT))),
+                }
+            }
         }
     };
 }

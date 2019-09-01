@@ -1,17 +1,21 @@
 use amethyst::prelude::*;
 use amethyst::{
-	assets::{PrefabLoader, PrefabLoaderSystem, RonFormat},
+	assets::{PrefabLoader, PrefabLoaderSystem, RonFormat, Handle, Loader},
 	core::{
         //shrev::{EventChannel, ReaderId},
-        transform::{TransformBundle},
+        transform::{TransformBundle, Transform},
     },
-    controls::{ArcBallControlBundle, ArcBallControlTag},
+    controls::{ArcBallControlBundle},
 	renderer::{
-		palette::Srgb,
+		palette::{Srgb, Srgba},
 	    plugins::{RenderToWindow, RenderShaded3D, RenderSkybox},
 	    types::DefaultBackend,
-	    rendy::mesh::{Normal, Position, TexCoord},
+	    rendy::{
+            mesh::{Normal, Position, TexCoord},
+            texture::palette::load_from_srgba,
+        },
 	    RenderingBundle,
+        Material, MaterialDefaults
 	},
 	utils::{
 		application_root_dir,
@@ -20,6 +24,7 @@ use amethyst::{
 	utils::{scene::BasicScenePrefab},
 };
 use amethyst_voxel::*;
+use std::iter::repeat_with;
 
 type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>), f32>;
 
@@ -38,6 +43,38 @@ impl SimpleState for Example {
             loader.load("prefab/arc_ball_camera.ron", RonFormat, ())
         });
         data.world.create_entity().with(prefab_handle).build();
+
+        let mtl = {
+            let world = &data.world;
+            let mat_defaults = world.read_resource::<MaterialDefaults>();
+            let loader = world.read_resource::<Loader>();
+
+            let textures = &world.read_resource();
+            let materials = &world.read_resource();
+
+            let albedo = loader.load_from_data(
+                load_from_srgba(Srgba::new(0.1, 0.5, 0.3, 1.0)).into(),
+                (),
+                textures,
+            );
+            let mat: Handle<Material> = loader.load_from_data(
+                Material {
+                    albedo,
+                    ..mat_defaults.0.clone()
+                },
+                (),
+                materials,
+            );
+
+            mat
+        };
+
+        data.world
+            .create_entity()
+            .with(MutableVoxels::<ExampleVoxel>::from_iter(ExampleVoxel, repeat_with(|| Simple::Material(1))))
+            .with(mtl)
+            .with(Transform::default())
+            .build();
     }
 
     fn on_stop(&mut self, _: StateData<GameData>) {

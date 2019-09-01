@@ -34,6 +34,18 @@ impl<V: AsVoxel> MutableVoxels<V> {
 	}
 }
 
+impl<V: voxel::AsNestedVoxel> MutableVoxels<V> {
+	pub fn from_iter<I>(data: V::Data, iter: I) -> Self where
+        I: IntoIterator<Item = V::Child>
+    {
+        MutableVoxels {
+        	data: V::from_iter(data, iter),
+        	dirty: true,
+        	mesh: None,
+        }
+    }
+}
+
 impl<V: AsVoxel> Deref for MutableVoxels<V> {
 	type Target = V::Voxel;
 
