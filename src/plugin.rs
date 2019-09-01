@@ -1,14 +1,12 @@
-use crate::voxel::GenericVoxel;
+use crate::voxel::AsVoxel;
 use crate::pass::*;
 use amethyst::{
     renderer::{
         bundle::{RenderOrder, RenderPlan, RenderPlugin, Target},
-        sprite_visibility::SpriteVisibilitySortingSystem,
-        visibility::VisibilitySortingSystem,
         pass::Base3DPassDef,
         Backend, Factory,
     },
-    core::ecs::{DispatcherBuilder, World, Resources},
+    core::ecs::{DispatcherBuilder, Resources},
     error::{Error},
 };
 use rendy::graph::render::RenderGroupDesc;
@@ -17,12 +15,12 @@ use rendy::graph::render::RenderGroupDesc;
 /// Generic over 3d pass rendering method.
 #[derive(derivative::Derivative)]
 #[derivative(Default(bound = ""), Debug(bound = ""))]
-pub struct RenderVoxel<D: Base3DPassDef, V: GenericVoxel> {
+pub struct RenderVoxel<D: Base3DPassDef, V: AsVoxel> {
     target: Target,
     marker: std::marker::PhantomData<(D, V)>,
 }
 
-impl<D: Base3DPassDef, V: GenericVoxel> RenderVoxel<D, V> {
+impl<D: Base3DPassDef, V: AsVoxel> RenderVoxel<D, V> {
     /// Set target to which 3d meshes will be rendered.
     pub fn with_target(mut self, target: Target) -> Self {
         self.target = target;
@@ -30,10 +28,10 @@ impl<D: Base3DPassDef, V: GenericVoxel> RenderVoxel<D, V> {
     }
 }
 
-impl<B: Backend, D: Base3DPassDef, V: GenericVoxel> RenderPlugin<B> for RenderVoxel<D, V> {
+impl<B: Backend, D: Base3DPassDef, V: 'static +  AsVoxel> RenderPlugin<B> for RenderVoxel<D, V> {
     fn on_build<'a, 'b>(
         &mut self,
-        builder: &mut DispatcherBuilder<'a, 'b>,
+        _builder: &mut DispatcherBuilder<'a, 'b>,
     ) -> Result<(), Error> {
         //builder.add(VisibilitySortingSystem::new(), "visibility_system", &[]);
         Ok(())

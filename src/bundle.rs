@@ -4,20 +4,20 @@ use amethyst::{
     error::Error,
 };
 use crate::{
-    voxel::GenericVoxel,
+    voxel::AsVoxel,
 };
 use std::marker::PhantomData;
 
 #[derive(Default)]
-pub struct VoxelBundle<V: GenericVoxel>(PhantomData<V>);
+pub struct VoxelBundle<V: AsVoxel>(PhantomData<V>);
 
-impl<V: GenericVoxel> VoxelBundle<V> {
+impl<V: AsVoxel> VoxelBundle<V> {
     pub fn new() -> Self {
         VoxelBundle(PhantomData)
     }
 }
 
-impl<'a, 'b, V: GenericVoxel> SystemBundle<'a, 'b> for VoxelBundle<V> {
+impl<'a, 'b, V: 'static + AsVoxel> SystemBundle<'a, 'b> for VoxelBundle<V> {
     fn build(
         self,
         builder: &mut DispatcherBuilder<'a, 'b>,

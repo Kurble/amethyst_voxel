@@ -24,13 +24,11 @@ use amethyst_voxel::*;
 type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>), f32>;
 
 #[derive(Clone)]
-pub struct Simple;
+pub struct ExampleVoxel;
 
-impl Metadata for Simple {
+impl VoxelData for ExampleVoxel {
     const SUBDIV: usize = 4;
 }
-
-pub type Voxel = <Simple as AsVoxel>::Voxel;
 
 struct Example;
 
@@ -81,10 +79,9 @@ fn main() -> amethyst::Result<()> {
             InputBundle::<StringBindings>::new().with_bindings_from_file(&key_bindings_path)?,
         )?
         .with_bundle(ArcBallControlBundle::<StringBindings>::new())?
-    	.with_bundle(VoxelBundle::<Voxel>::new())?
+    	.with_bundle(VoxelBundle::<ExampleVoxel>::new())?
     	.with_bundle(
         	RenderingBundle::<DefaultBackend>::new()
-	            // The RenderToWindow plugin provides all the scaffolding for opening a window and drawing on it
 	            .with_plugin(
 	                RenderToWindow::from_config_path(display_config_path)
 	                    .with_clear([0.0, 0.0, 0.0, 1.0]),
@@ -94,10 +91,11 @@ fn main() -> amethyst::Result<()> {
                     Srgb::new(0.82, 0.51, 0.50),
                     Srgb::new(0.18, 0.11, 0.85),
                 ))
-	            .with_plugin(RenderVoxelPbr::<Voxel>::default()),
+	            .with_plugin(RenderVoxelPbr::<ExampleVoxel>::default()),
     	)?;
 
-    let mut game = Application::new(assets_directory, Example, game_data).expect("Fatal error");
+    let mut game = Application::build(assets_directory, Example)?
+        .build(game_data)?;
     game.run();
 
     Ok(())

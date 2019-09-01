@@ -3,71 +3,35 @@ use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 use std::iter::FromIterator;
 
-use downcast_rs::Downcast;
 use nalgebra_glm::*;
-use amethyst::{
-    ecs::prelude::{Component, DenseVecStorage},
-};
 
 use crate::coordinate::Pos;
 use crate::triangulate::*;
 use crate::side::*;
 
 /// Trait for user data associated with voxels on a specific level.
-pub trait Metadata: 'static + Clone + Send + Sync {
+pub trait VoxelData: 'static + Clone + Send + Sync {
     /// The amount of subdivisions to do in order to create child voxels.
     /// Since a value of 0 would mean that no subdivisions will be made, it is used to denote a
     /// voxel type that has no children. `Voxel::Detail{ .. }` is not allowed for these voxel types.
     const SUBDIV: usize;
 
-    /// Informs the triangulator whether this voxel should be considered as a solid voxel or not.
+    /// Informs the triangulator whether the voxel that owns this data should be considered 
+    ///  as a solid voxel or not.
     /// A solid voxel is a voxel that can't be seen through in any way.
     fn solid(&self) -> bool {
         false
     }
 
-    /// Informs the triangulator whether this voxel should be considered empty. Empty voxels
-    /// are not voxelized.
+    /// Informs the triangulator whether the voxel that owns this data should be considered empty. 
+    /// Empty voxels are not voxelized.
     fn empty(&self) -> bool {
         false
     }
 }
 
-impl Metadata for () {
-    const SUBDIV: usize = 1;
-}
-
-pub struct End;
-
-pub trait AsVoxel {
-    type Meta: Metadata;
-    type Voxel: Voxel<Self::Meta> + Clone;
-}
-
-impl<T: Metadata> AsVoxel for T {
-    type Meta = T;
-    type Voxel = Dynamic<T, (), Static>;
-}
-
-macro_rules! define_chain {
-    ($head:ident, $($tail:ident),+) => {
-        impl<$head: Metadata, $($tail: Metadata),+> AsVoxel for ($head, $($tail),+) where ($($tail),+): AsVoxel {
-            type Meta = $head;
-            type Voxel = Dynamic<$head, <($($tail),+) as AsVoxel>::Meta, <($($tail),+) as AsVoxel>::Voxel>;
-        }
-    };
-}
-
-define_chain!(A, B);
-define_chain!(A, B, C);
-define_chain!(A, B, C, D);
-define_chain!(A, B, C, D, E);
-define_chain!(A, B, C, D, E, F);
-define_chain!(A, B, C, D, E, F, G);
-define_chain!(A, B, C, D, E, F, G, H);
-
 /// The required functionality to triangulate voxels.
-pub trait Voxel<T: Metadata>: 'static + Send + Sync + Downcast + GenericVoxel {
+pub trait Voxel<T: VoxelData>: 'static + Send + Sync {
     /// Returns whether this voxel is visible, i.e. if it has geometry.
     fn visible(&self) -> bool;
 
@@ -76,9 +40,7 @@ pub trait Voxel<T: Metadata>: 'static + Send + Sync + Downcast + GenericVoxel {
 
     /// Triangulate this voxel to the mesh.
     fn triangulate_self<S: Side<T>>(&self, mesh: &mut Mesh, origin: Pos, scale: f32);
-}
 
-pub trait GenericVoxel: Downcast + Send + Sync {
     /// Triangulate this voxel to the mesh.
     fn triangulate_all(&self, mesh: &mut Mesh, origin: Pos, scale: f32);
 
@@ -86,16 +48,22 @@ pub trait GenericVoxel: Downcast + Send + Sync {
     fn hit(&self, transform: Mat4, origin: Vec3, direction: Vec3) -> bool;
 }
 
-/// A single static voxel (no recursion).
+/// Trait that translates a tuple of VoxelData types to a Voxel type.
+pub trait AsVoxel: Send + Sync {
+    type Data: VoxelData;
+    type Voxel: Voxel<Self::Data> + Clone;
+}
+
+/// A single voxel with nothing special.
 #[derive(Clone)]
-pub enum Static {
+pub enum Simple {
     Material(u32),
     Empty
 }
 
-/// A single dynamic voxel.
+/// A single voxel with nesting capability.
 #[derive(Clone)]
-pub enum Dynamic<T: Metadata, U: Metadata, V: Voxel<U> + Clone> {
+pub enum Nested<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> {
     /// An empty voxel, air for example.
     Empty {
         ph: PhantomData<U>,
@@ -124,76 +92,35 @@ pub enum Dynamic<T: Metadata, U: Metadata, V: Voxel<U> + Clone> {
     },
 }
 
-impl_downcast!(GenericVoxel);
-
-impl Voxel<()> for Static {
-    fn visible(&self) -> bool {
-        if let &Static::Material(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn render(&self) -> bool {
-        if let &Static::Empty = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn triangulate_self<S: Side<()>>(&self, mesh: &mut Mesh, origin: Pos, scale: f32) {
-        if let &Static::Material(material) = self {
-            triangulate_face::<(), S>(mesh, origin, scale, material);
-        }
-    }
+impl VoxelData for () {
+    const SUBDIV: usize = 1;
 }
 
-impl GenericVoxel for Static {
-    fn triangulate_all(&self, mesh: &mut Mesh, origin: Pos, scale: f32) {
-        self.triangulate_self::<Left>(mesh, origin, scale);
-        self.triangulate_self::<Right>(mesh, origin, scale);
-        self.triangulate_self::<Below>(mesh, origin, scale);
-        self.triangulate_self::<Above>(mesh, origin, scale);
-        self.triangulate_self::<Back>(mesh, origin, scale);
-        self.triangulate_self::<Front>(mesh, origin, scale);
-    }
-
-    fn hit(&self, _transform: Mat4, _origin: Vec3, _direction: Vec3) -> bool {
-        // todo: check if the voxel is missed entirely.
-        match self {
-            Static::Empty => false,
-            Static::Material(_) => true,
-        }
-    }
+impl<T: VoxelData> AsVoxel for T {
+    type Data = T;
+    type Voxel = Nested<T, (), Simple>;
 }
 
-impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> Deref for Dynamic<T, U, V> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        match self {
-            &Dynamic::Empty { ref data, .. } |
-            &Dynamic::Detail { ref data, .. } |
-            &Dynamic::Material { ref data, .. } => data,
+macro_rules! define_chain {
+    ($head:ident, $($tail:ident),+) => {
+        impl<$head: VoxelData, $($tail: VoxelData),+> AsVoxel for ($head, $($tail),+) where ($($tail),+): AsVoxel {
+            type Data = $head;
+            type Voxel = Nested<$head, <($($tail),+) as AsVoxel>::Data, <($($tail),+) as AsVoxel>::Voxel>;
         }
-    }
+    };
 }
 
-impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> DerefMut for Dynamic<T, U, V> {
-    fn deref_mut(&mut self) -> &mut T {
-        match self {
-            &mut Dynamic::Empty { ref mut data, .. } |
-            &mut Dynamic::Detail { ref mut data, .. } |
-            &mut Dynamic::Material { ref mut data, .. } => data,
-        }
-    }
-}
+define_chain!(A, B);
+define_chain!(A, B, C);
+define_chain!(A, B, C, D);
+define_chain!(A, B, C, D, E);
+define_chain!(A, B, C, D, E, F);
+define_chain!(A, B, C, D, E, F, G);
+define_chain!(A, B, C, D, E, F, G, H);
 
-impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> Dynamic<T, U, V> {
+impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
     pub fn new(data: T) -> Self {
-        Dynamic::Empty {
+        Nested::Empty {
             data,
             ph: PhantomData,
         }
@@ -202,14 +129,14 @@ impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> Dynamic<T, U, V> {
     pub fn from_iter<I>(data: T, iter: I) -> Self where
         I: IntoIterator<Item = V>
     {
-        Dynamic::Detail {
+        Nested::Detail {
             data,
             detail: Arc::new(Vec::from_iter(iter.into_iter().take(Const::<T>::COUNT))),
         }
     }
 
     pub fn filled(data: T, material: u32) -> Self {
-        Dynamic::Material {
+        Nested::Material {
             data,
             material
         }
@@ -218,7 +145,8 @@ impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> Dynamic<T, U, V> {
     pub fn hit_detect(&self,
                       vox_to_world: Mat4,
                       origin: Vec3,
-                      direction: Vec3) -> Option<(usize, Mat4)> {
+                      direction: Vec3
+    ) -> Option<(usize, Mat4)> {
         // the current location being checked on the ray
         // scales the origin so that we're in subvoxel space.
         let transform = inverse(&vox_to_world);
@@ -356,44 +284,85 @@ impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> Dynamic<T, U, V> {
 
     pub fn get(&self, index: usize) -> Option<&V> {
         match self {
-            &Dynamic::Empty { .. } => None,
-            &Dynamic::Detail { ref detail, .. } => detail.get(index),
-            &Dynamic::Material { .. } => None,
+            &Nested::Empty { .. } => None,
+            &Nested::Detail { ref detail, .. } => detail.get(index),
+            &Nested::Material { .. } => None,
         }
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut V> {
         match self {
-            &mut Dynamic::Empty { .. } => None,
-            &mut Dynamic::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
-            &mut Dynamic::Material { .. } => None,
+            &mut Nested::Empty { .. } => None,
+            &mut Nested::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
+            &mut Nested::Material { .. } => None,
         }
     }
 }
 
-impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> Voxel<T> for Dynamic<T, U, V> {
+impl Voxel<()> for Simple {
+    fn visible(&self) -> bool {
+        if let &Simple::Material(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn render(&self) -> bool {
+        if let &Simple::Empty = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn triangulate_self<S: Side<()>>(&self, mesh: &mut Mesh, origin: Pos, scale: f32) {
+        if let &Simple::Material(material) = self {
+            triangulate_face::<(), S>(mesh, origin, scale, material);
+        }
+    }
+
+    fn triangulate_all(&self, mesh: &mut Mesh, origin: Pos, scale: f32) {
+        self.triangulate_self::<Left>(mesh, origin, scale);
+        self.triangulate_self::<Right>(mesh, origin, scale);
+        self.triangulate_self::<Below>(mesh, origin, scale);
+        self.triangulate_self::<Above>(mesh, origin, scale);
+        self.triangulate_self::<Back>(mesh, origin, scale);
+        self.triangulate_self::<Front>(mesh, origin, scale);
+    }
+
+    fn hit(&self, _transform: Mat4, _origin: Vec3, _direction: Vec3) -> bool {
+        // todo: check if the voxel is missed entirely.
+        match self {
+            Simple::Empty => false,
+            Simple::Material(_) => true,
+        }
+    }
+}
+
+impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, V> {
     fn visible(&self) -> bool {
         match self {
-            &Dynamic::Empty { .. } => false,
-            &Dynamic::Detail { ref data, .. } => !data.empty(),
-            &Dynamic::Material { .. } => true,
+            &Nested::Empty { .. } => false,
+            &Nested::Detail { ref data, .. } => !data.empty(),
+            &Nested::Material { .. } => true,
         }
     }
 
     fn render(&self) -> bool {
         match self {
-            &Dynamic::Empty { .. } => true,
-            &Dynamic::Detail { ref data, .. } => !data.solid(),
-            &Dynamic::Material { .. } => false,
+            &Nested::Empty { .. } => true,
+            &Nested::Detail { ref data, .. } => !data.solid(),
+            &Nested::Material { .. } => false,
         }
     }
 
     fn triangulate_self<S: Side<T>>(&self, mesh: &mut Mesh, origin: Pos, scale: f32) {
         match self {
-            &Dynamic::Empty { .. } =>
+            &Nested::Empty { .. } =>
                 (),
 
-            &Dynamic::Detail { ref detail, .. } => match S::SIDE {
+            &Nested::Detail { ref detail, .. } => match S::SIDE {
                 0 => triangulate_detail::<T,U,V,S,Right>(mesh, origin, scale, detail.as_slice()),
                 1 => triangulate_detail::<T,U,V,S,Left>(mesh, origin, scale, detail.as_slice()),
                 2 => triangulate_detail::<T,U,V,S,Above>(mesh, origin, scale, detail.as_slice()),
@@ -403,13 +372,11 @@ impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> Voxel<T> for Dynamic<T, U, V
                 _ => panic!(),
             },
 
-            &Dynamic::Material { material, .. } =>
+            &Nested::Material { material, .. } =>
                 triangulate_face::<T, S>(mesh, origin, scale, material),
         }
     }
-}
 
-impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> GenericVoxel for Dynamic<T, U, V> {
     fn triangulate_all(&self, mesh: &mut Mesh, origin: Pos, scale: f32) {
         self.triangulate_self::<Left>(mesh, origin, scale);
         self.triangulate_self::<Right>(mesh, origin, scale);
@@ -422,12 +389,34 @@ impl<T: Metadata, U: Metadata, V: Voxel<U> + Clone> GenericVoxel for Dynamic<T, 
     fn hit(&self, transform: Mat4, origin: Vec3, direction: Vec3) -> bool {
         // todo check if we miss entirely
         match self {
-            &Dynamic::Empty { .. } =>  return false,
-            &Dynamic::Detail { .. } => (),
-            &Dynamic::Material { .. } => return true,
+            &Nested::Empty { .. } =>  return false,
+            &Nested::Detail { .. } => (),
+            &Nested::Material { .. } => return true,
         };
 
         self.hit_detect(transform, origin, direction)
             .is_some()
+    }
+}
+
+impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Deref for Nested<T, U, V> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        match self {
+            &Nested::Empty { ref data, .. } |
+            &Nested::Detail { ref data, .. } |
+            &Nested::Material { ref data, .. } => data,
+        }
+    }
+}
+
+impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> DerefMut for Nested<T, U, V> {
+    fn deref_mut(&mut self) -> &mut T {
+        match self {
+            &mut Nested::Empty { ref mut data, .. } |
+            &mut Nested::Detail { ref mut data, .. } |
+            &mut Nested::Material { ref mut data, .. } => data,
+        }
     }
 }

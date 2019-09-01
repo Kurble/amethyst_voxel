@@ -1,8 +1,8 @@
-use crate::voxel::Metadata;
+use crate::voxel::VoxelData;
 use crate::triangulate::Const;
 use nalgebra_glm::{Vec3, Mat3};
 
-pub trait Side<T: Metadata> {
+pub trait Side<T: VoxelData> {
     const OFFSET: isize;
     const SIDE: usize;
 
@@ -13,7 +13,7 @@ pub trait Side<T: Metadata> {
 
 pub struct Left;
 
-impl<T: Metadata> Side<T> for Left {
+impl<T: VoxelData> Side<T> for Left {
     const OFFSET: isize = (Const::<T>::DX as isize);
 
     const SIDE: usize = 1;
@@ -31,7 +31,7 @@ impl<T: Metadata> Side<T> for Left {
 
 pub struct Right;
 
-impl<T: Metadata> Side<T> for Right {
+impl<T: VoxelData> Side<T> for Right {
     const OFFSET: isize = -(Const::<T>::DX as isize);
 
     const SIDE: usize = 0;
@@ -49,7 +49,7 @@ impl<T: Metadata> Side<T> for Right {
 
 pub struct Below;
 
-impl<T: Metadata> Side<T> for Below {
+impl<T: VoxelData> Side<T> for Below {
     const OFFSET: isize = Const::<T>::DY as isize;
 
     const SIDE: usize = 3;
@@ -67,7 +67,7 @@ impl<T: Metadata> Side<T> for Below {
 
 pub struct Above;
 
-impl<T: Metadata> Side<T> for Above {
+impl<T: VoxelData> Side<T> for Above {
     const OFFSET: isize = -(Const::<T>::DY as isize);
 
     const SIDE: usize = 2;
@@ -85,7 +85,7 @@ impl<T: Metadata> Side<T> for Above {
 
 pub struct Back;
 
-impl<T: Metadata> Side<T> for Back {
+impl<T: VoxelData> Side<T> for Back {
     const OFFSET: isize = Const::<T>::DZ as isize;
 
     const SIDE: usize = 5;
@@ -103,7 +103,7 @@ impl<T: Metadata> Side<T> for Back {
 
 pub struct Front;
 
-impl<T: Metadata> Side<T> for Front {
+impl<T: VoxelData> Side<T> for Front {
     const OFFSET: isize = -(Const::<T>::DZ as isize);
 
     const SIDE: usize = 4;

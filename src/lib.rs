@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate downcast_rs;
-#[macro_use]
 extern crate derivative;
 
 mod coordinate;
@@ -13,21 +11,21 @@ mod system;
 mod plugin;
 mod pass;
 
-pub use voxel::{GenericVoxel, Static, Dynamic, AsVoxel, Metadata};
+pub use voxel::{Simple, Nested, AsVoxel, VoxelData};
 pub use bundle::VoxelBundle;
 
 pub type RenderVoxelPbr<V> = plugin::RenderVoxel<amethyst::renderer::pass::PbrPassDef, V>;
 
-pub struct MutableVoxels<V: GenericVoxel> {
-	pub(crate) data: V,
+pub struct MutableVoxels<V: AsVoxel> {
+	pub(crate) data: V::Voxel,
 	pub(crate) dirty: bool,
 	pub(crate) mesh: Option<usize>,
 }
 
 use std::ops::{Deref, DerefMut};
 
-impl<V: GenericVoxel> From<V> for MutableVoxels<V> {
-	fn from(value: V) -> Self {
+impl<V: AsVoxel> MutableVoxels<V> {
+	pub fn new(value: V::Voxel) -> Self {
 		MutableVoxels {
 			data: value,
 			dirty: true,
@@ -36,21 +34,21 @@ impl<V: GenericVoxel> From<V> for MutableVoxels<V> {
 	}
 }
 
-impl<V: GenericVoxel> Deref for MutableVoxels<V> {
-	type Target = V;
+impl<V: AsVoxel> Deref for MutableVoxels<V> {
+	type Target = V::Voxel;
 
-	fn deref(&self) -> &V {
+	fn deref(&self) -> &V::Voxel {
 		&self.data
 	}
 }
 
-impl<V: GenericVoxel> DerefMut for MutableVoxels<V> {
-	fn deref_mut(&mut self) -> &mut V {
+impl<V: AsVoxel> DerefMut for MutableVoxels<V> {
+	fn deref_mut(&mut self) -> &mut V::Voxel {
 		self.dirty = true;
 		&mut self.data
 	}
 }
 
-impl<V: GenericVoxel> amethyst::ecs::Component for MutableVoxels<V> {
+impl<V: AsVoxel + 'static> amethyst::ecs::Component for MutableVoxels<V> {
 	type Storage = amethyst::ecs::DenseVecStorage<Self>;
 }

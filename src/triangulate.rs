@@ -3,12 +3,12 @@ use crate::voxel::*;
 use crate::side::*;
 
 use nalgebra_glm::*;
-use std::time::*;
+
 use rendy::mesh::{AsVertex, PosNorm, VertexFormat};
 
 pub(crate) struct Const<T>(T);
 
-impl<T: Metadata> Const<T> {
+impl<T: VoxelData> Const<T> {
     pub const WIDTH: usize = 1 << T::SUBDIV;
     pub const LAST: usize = Self::WIDTH - 1;
     pub const COUNT: usize = Self::WIDTH * Self::WIDTH * Self::WIDTH;
@@ -33,19 +33,14 @@ pub struct Vertex {
 
 impl Mesh {
     /// Create a new mesh
-    pub fn new(root: &dyn GenericVoxel, origin: Pos, scale: f32) -> Self {
-        let now = Instant::now();
-        let mut result = Self { vbuf: Vec::with_capacity(2048), ibuf: Vec::with_capacity(2048) };
-        result.reuse(root, origin, scale);
-        println!("Triangulated in {:?}", now.elapsed());
-        result
-    }
+    pub fn build<V: AsVoxel>(root: &V::Voxel, origin: Pos, scale: f32) -> Self {
+        let mut result = Self { 
+            vbuf: Vec::with_capacity(2048), 
+            ibuf: Vec::with_capacity(2048) 
+        };
+        root.triangulate_all(&mut result, origin, scale);
 
-    /// Re-use the vertex and index buffer for a new mesh
-    pub fn reuse(&mut self, root: &dyn GenericVoxel, origin: Pos, scale: f32) {
-        self.vbuf.clear();
-        self.ibuf.clear();
-        root.triangulate_all(self, origin, scale);
+        result
     }
 }
 
@@ -57,8 +52,8 @@ impl AsVertex for Vertex {
 
 pub fn triangulate_detail<T, U, V, S, Q>(m: &mut Mesh, origin: Pos, scale: f32, sub: &[V])
     where
-        T: Metadata,
-        U: Metadata,
+        T: VoxelData,
+        U: VoxelData,
         V: Voxel<U>,
         S: Side<T>,
         Q: Side<U>,
@@ -91,7 +86,7 @@ pub fn triangulate_detail<T, U, V, S, Q>(m: &mut Mesh, origin: Pos, scale: f32, 
 fn convert(v: Vec3) -> [f32; 3] { [v[0], v[1], v[2]] }
 
 pub fn triangulate_face<T, S>(m: &mut Mesh, ori: Pos, sc: f32, mat: u32) where
-    T: Metadata,
+    T: VoxelData,
     S: Side<T>,
 {
     let sc = sc * 0.5;

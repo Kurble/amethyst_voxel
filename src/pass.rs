@@ -9,11 +9,10 @@ use amethyst::renderer::{
     submodules::{DynamicVertexBuffer, EnvironmentSub, MaterialId, MaterialSub, SkinningSub},
     types::{Backend, Mesh},
     util,
-    visibility::Visibility,
 };
 use amethyst::assets::{Handle};
 use amethyst::core::{
-    ecs::{Join, ReadExpect, ReadStorage, WriteStorage, Resources, SystemData},
+    ecs::{Join, ReadStorage, WriteStorage, Resources, SystemData},
     transform::Transform,
 };
 use rendy::{
@@ -30,7 +29,7 @@ use rendy::{
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use crate::{
-    voxel::GenericVoxel,
+    voxel::AsVoxel,
     coordinate::Pos,
     MutableVoxels,
 };
@@ -38,11 +37,11 @@ use crate::{
 /// Draw opaque 3d meshes with specified shaders and texture set
 #[derive(Clone, Derivative)]
 #[derivative(Debug(bound = ""), Default(bound = ""))]
-pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef, V: GenericVoxel> {
+pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef, V: AsVoxel> {
     marker: PhantomData<(B, D, V)>,
 }
 
-impl<B: Backend, T: Base3DPassDef, V: GenericVoxel> DrawVoxelDesc<B, T, V> {
+impl<B: Backend, T: Base3DPassDef, V: AsVoxel> DrawVoxelDesc<B, T, V> {
     pub fn new() -> Self {
         Self {
         	marker: PhantomData,
@@ -50,7 +49,7 @@ impl<B: Backend, T: Base3DPassDef, V: GenericVoxel> DrawVoxelDesc<B, T, V> {
     }
 }
 
-impl<B: Backend, T: Base3DPassDef, V: GenericVoxel> RenderGroupDesc<B, Resources> for DrawVoxelDesc<B, T, V> {
+impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroupDesc<B, Resources> for DrawVoxelDesc<B, T, V> {
     fn build(
         self,
         _ctx: &GraphContext<B>,
@@ -108,7 +107,7 @@ impl<B: Backend, T: Base3DPassDef, V: GenericVoxel> RenderGroupDesc<B, Resources
 /// such as [pass::pbr::DrawPbr]
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: GenericVoxel> {
+pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: AsVoxel> {
     pipeline_basic: B::GraphicsPipeline,
     pipeline_layout: B::PipelineLayout,
     static_batches: TwoLevelBatch<MaterialId, usize, SmallVec<[VertexArgs; 4]>>,
@@ -121,7 +120,7 @@ pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: GenericVoxel> {
     marker: PhantomData<(T, V)>,
 }
 
-impl<B: Backend, T: Base3DPassDef, V: GenericVoxel> RenderGroup<B, Resources> for DrawVoxel<B, T, V> {
+impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resources> for DrawVoxel<B, T, V> {
     fn prepare(
         &mut self,
         factory: &Factory<B>,
@@ -166,7 +165,7 @@ impl<B: Backend, T: Base3DPassDef, V: GenericVoxel> RenderGroup<B, Resources> fo
                     let crate::triangulate::Mesh {
                         vbuf,
                         ibuf,
-                    } = crate::triangulate::Mesh::new(&mesh.data, Pos::new(0.0, 0.0, 0.0), 1.0);
+                    } = crate::triangulate::Mesh::build::<V>(&mesh.data, Pos::new(0.0, 0.0, 0.0), 1.0);
 
                     let new_mesh = B::wrap_mesh(MeshBuilder::new()
                         .with_indices(ibuf)
