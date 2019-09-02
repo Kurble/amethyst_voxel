@@ -1,21 +1,19 @@
 use amethyst::prelude::*;
 use amethyst::{
-	assets::{PrefabLoader, PrefabLoaderSystem, RonFormat, Handle, Loader},
+	assets::{PrefabLoader, PrefabLoaderSystem, RonFormat},
 	core::{
         //shrev::{EventChannel, ReaderId},
         transform::{TransformBundle, Transform},
     },
     controls::{ArcBallControlBundle},
 	renderer::{
-		palette::{Srgb, Srgba},
+		palette::{Srgb},
 	    plugins::{RenderToWindow, RenderShaded3D, RenderSkybox},
 	    types::DefaultBackend,
 	    rendy::{
             mesh::{Normal, Position, TexCoord},
-            texture::palette::load_from_srgba,
         },
-	    RenderingBundle,
-        Material, MaterialDefaults
+	    RenderingBundle
 	},
 	utils::{
 		application_root_dir,
@@ -24,6 +22,7 @@ use amethyst::{
 	utils::{scene::BasicScenePrefab},
 };
 use amethyst_voxel::*;
+use rand::Rng;
 use std::iter::repeat_with;
 
 type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>), f32>;
@@ -39,52 +38,37 @@ struct Example;
 
 impl SimpleState for Example {
     fn on_start(&mut self, data: StateData<GameData>) {
+        data.world.register::<MutableVoxels<ExampleVoxel>>();
+
         let prefab_handle = data.world.exec(|loader: PrefabLoader<'_, MyPrefabData>| {
             loader.load("prefab/arc_ball_camera.ron", RonFormat, ())
         });
         data.world.create_entity().with(prefab_handle).build();
 
-        let mtl = {
-            let world = &data.world;
-            let mat_defaults = world.read_resource::<MaterialDefaults>();
-            let loader = world.read_resource::<Loader>();
+        let mut rng = rand::thread_rng();
 
-            let textures = &world.read_resource();
-            let materials = &world.read_resource();
-
-            let albedo = loader.load_from_data(
-                load_from_srgba(Srgba::new(0.1, 0.5, 0.3, 1.0)).into(),
-                (),
-                textures,
-            );
-            let mat: Handle<Material> = loader.load_from_data(
-                Material {
-                    albedo,
-                    ..mat_defaults.0.clone()
-                },
-                (),
-                materials,
-            );
-
-            mat
+        let materials: Vec<_> = {
+            let mut materials = data.world.write_resource::<VoxelMaterialStorage>();
+            repeat_with(|| materials.create(VoxelMaterial {
+                albedo: [rng.gen(), rng.gen(), rng.gen()],
+                alpha: 255,
+                emission: [0, 0, 0],
+                metallic: rng.gen(),
+                roughness: rng.gen(),
+            })).take(10).collect()
         };
 
         data.world
             .create_entity()
             .with(MutableVoxels::<ExampleVoxel>::from_iter(ExampleVoxel, repeat_with(|| {
                 if rand::random() {
-                    Simple::Material(1)
+                    Simple::Material(materials[rng.gen_range(0, 10)])
                 } else {
                     Simple::Empty
                 }
             })))
-            .with(mtl)
             .with(Transform::default())
             .build();
-    }
-
-    fn on_stop(&mut self, _: StateData<GameData>) {
-        println!("End!");
     }
 
     fn update(&mut self, _: &mut StateData<GameData>) -> SimpleTrans {

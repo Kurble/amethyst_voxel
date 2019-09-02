@@ -2,10 +2,11 @@ use std::iter::repeat;
 use crate::coordinate::*;
 use crate::voxel::*;
 use crate::side::*;
+use crate::material::VoxelMaterialId;
 
 use nalgebra_glm::*;
 
-use rendy::mesh::{PosNorm, Position, Normal, TexCoord};
+use rendy::mesh::{Position, Normal};
 
 pub(crate) struct Const<T>(T);
 
@@ -23,7 +24,7 @@ impl<T: VoxelData> Const<T> {
 pub struct Mesh {
     pub pos: Vec<Position>,
     pub nml: Vec<Normal>,
-    pub tex: Vec<TexCoord>,
+    pub tex: Vec<u32>,
     pub ind: Vec<u32>,
 }
 
@@ -76,7 +77,7 @@ pub fn triangulate_detail<T, U, V, S, Q>(m: &mut Mesh, origin: Pos, scale: f32, 
 #[inline]
 fn convert(v: Vec3) -> [f32; 3] { [v[0], v[1], v[2]] }
 
-pub fn triangulate_face<T, S>(m: &mut Mesh, ori: Pos, sc: f32, mat: u32) where
+pub fn triangulate_face<T, S>(m: &mut Mesh, ori: Pos, sc: f32, mat: VoxelMaterialId) where
     T: VoxelData,
     S: Side<T>,
 {
@@ -85,12 +86,10 @@ pub fn triangulate_face<T, S>(m: &mut Mesh, ori: Pos, sc: f32, mat: u32) where
     let transform = S::orientation();
     let center = vec3(ori.x+sc, ori.y+sc, ori.z+sc);
     let up = vec3(0.0, 0.0, 1.0);
+    let begin = m.pos.len() as u32;
 
     m.pos.extend(quad.iter().map(|pos| Position(convert(transform*pos + center))));
     m.nml.extend(repeat(Normal(convert(transform*up))).take(4));
-    m.tex.extend(repeat(TexCoord([0.0, 0.0])).take(4));
-
-    let begin = m.pos.len() as u32;
-
+    m.tex.extend(repeat(mat.0).take(4));
     m.ind.extend_from_slice(&[begin, begin+1, begin+2, begin, begin+2, begin+3]);
 }

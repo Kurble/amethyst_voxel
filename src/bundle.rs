@@ -22,8 +22,7 @@ impl<'a, 'b, V: 'static + AsVoxel> SystemBundle<'a, 'b> for VoxelBundle<V> {
         self,
         builder: &mut DispatcherBuilder<'a, 'b>,
     ) -> Result<(), Error> {
-        builder.add(
-            crate::system::VoxelSystem::<V>::new(), "voxel_system", &[]);
+        builder.add(crate::material::VoxelMaterialSystem, "voxel_material_system", &[]);
         Ok(())
     }
 }

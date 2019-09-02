@@ -44,17 +44,7 @@ impl<B: Backend, D: Base3DPassDef, V: 'static +  AsVoxel> RenderPlugin<B> for Re
         _resources: &Resources,
     ) -> Result<(), Error> {
         plan.extend_target(self.target, move |ctx| {
-            ctx.add(
-                RenderOrder::Opaque,
-                DrawVoxelDesc::<B, D, V>::new()
-                    .builder(),
-            )?;
-            //ctx.add(
-            //    RenderOrder::Transparent,
-            //    DrawBase3DTransparentDesc::<B, D>::new()
-            //        .with_skinning(skinning)
-            //        .builder(),
-            //)?;
+            ctx.add(RenderOrder::Opaque, DrawVoxelDesc::<B, D, V>::new().builder())?;
             Ok(())
         });
         Ok(())

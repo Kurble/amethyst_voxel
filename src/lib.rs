@@ -5,6 +5,8 @@ mod coordinate;
 mod side;
 mod voxel;
 mod triangulate;
+mod material;
+mod io;
 
 mod bundle;
 mod system;
@@ -13,6 +15,8 @@ mod pass;
 
 pub use voxel::{Simple, Nested, AsVoxel, VoxelData};
 pub use bundle::VoxelBundle;
+pub use material::{VoxelMaterial, VoxelMaterialStorage};
+pub use io::load_vox;
 
 pub type RenderVoxelPbr<V> = plugin::RenderVoxel<amethyst::renderer::pass::ShadedPassDef, V>;
 

@@ -8,6 +8,7 @@ use nalgebra_glm::*;
 use crate::coordinate::Pos;
 use crate::triangulate::*;
 use crate::side::*;
+use crate::material::VoxelMaterialId;
 
 /// Trait for user data associated with voxels on a specific level.
 pub trait VoxelData: 'static + Clone + Send + Sync {
@@ -64,7 +65,7 @@ pub trait AsNestedVoxel: AsVoxel {
 /// A single voxel with nothing special.
 #[derive(Clone)]
 pub enum Simple {
-    Material(u32),
+    Material(VoxelMaterialId),
     Empty
 }
 
@@ -92,7 +93,7 @@ pub enum Nested<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> {
     /// A completely solid voxel with a single material (color + specular)
     Material {
         /// The material id
-        material: u32,
+        material: VoxelMaterialId,
 
         /// Metadata for the voxel.
         data: T,
@@ -165,7 +166,7 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
         }
     }
 
-    pub fn filled(data: T, material: u32) -> Self {
+    pub fn filled(data: T, material: VoxelMaterialId) -> Self {
         Nested::Material {
             data,
             material

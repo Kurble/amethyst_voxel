@@ -1,7 +1,6 @@
 use std::mem::replace;
 use amethyst::renderer::{
     batch::{GroupIterator, TwoLevelBatch},
-    mtl::{Material},
     pipeline::{PipelineDescBuilder, PipelinesBuilder},
     pass::{Base3DPassDef},
     pod::{SkinnedVertexArgs, VertexArgs},
@@ -10,9 +9,9 @@ use amethyst::renderer::{
     types::{Backend, Mesh},
     util,
 };
-use amethyst::assets::{Handle};
+
 use amethyst::core::{
-    ecs::{Join, ReadStorage, WriteStorage, Resources, SystemData},
+    ecs::{Join, Read, ReadStorage, WriteStorage, Resources, SystemData},
     transform::Transform,
 };
 use rendy::{
@@ -31,6 +30,7 @@ use std::marker::PhantomData;
 use crate::{
     voxel::AsVoxel,
     coordinate::Pos,
+    material::VoxelMaterialStorage,
     MutableVoxels,
 };
 
@@ -138,7 +138,7 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resourc
         ) = <(
             //ReadExpect<'_, Visibility>,
             WriteStorage<'_, MutableVoxels<V>>,
-            ReadStorage<'_, Handle<Material>>,
+            Read<'_, VoxelMaterialStorage>,
             ReadStorage<'_, Transform>,
             ReadStorage<'_, Tint>,
         )>::fetch(resources);
@@ -153,50 +153,54 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resourc
         let statics_ref = &mut self.static_batches;
         let meshes_ref = &mut self.meshes;
 
-        (&materials, &mut meshes, &transforms, tints.maybe())
-            .join()
-            .filter_map(|(mat, mesh, tform, tint)| {
-                let id = match mesh.mesh {
-                    Some(mesh_id) => mesh_id,
-                    None => meshes_ref.len(),
-                };
+        if let Some(mat) = materials.handle() {
+            (&mut meshes, &transforms, tints.maybe())
+                .join()
+                .filter_map(|(mesh, tform, tint)| {
+                    let id = match mesh.mesh {
+                        Some(mesh_id) => mesh_id,
+                        None => meshes_ref.len(),
+                    };
 
-                if mesh.dirty {
-                    let crate::triangulate::Mesh {
-                        pos,
-                        nml,
-                        tex,
-                        ind,
-                    } = crate::triangulate::Mesh::build::<V>(&mesh.data, Pos::new(0.0, 0.0, 0.0), 16.0);
+                    if mesh.dirty {
+                        let crate::triangulate::Mesh {
+                            pos,
+                            nml,
+                            tex,
+                            ind,
+                        } = crate::triangulate::Mesh::build::<V>(&mesh.data, Pos::new(0.0, 0.0, 0.0), 16.0);
 
-                    let new_mesh = B::wrap_mesh(MeshBuilder::new()
-                        .with_indices(ind)
-                        .with_vertices(pos)
-                        .with_vertices(nml)
-                        .with_vertices(tex)
-                        .build(queue, factory)
-                        .unwrap());
+                        let tex: Vec<_> = tex.into_iter().map(|mat| materials.coord(mat)).collect();
 
-                    if id == meshes_ref.len() {
-                        meshes_ref.push(new_mesh);
-                    } else {
-                        let _old_mesh = replace(&mut meshes_ref[id], new_mesh);
-                        // todo: find out how to destroy the old mesh
+                        let new_mesh = B::wrap_mesh(MeshBuilder::new()
+                            .with_indices(ind)
+                            .with_vertices(pos)
+                            .with_vertices(nml)
+                            .with_vertices(tex)
+                            .build(queue, factory)
+                            .unwrap());
+
+                        if id == meshes_ref.len() {
+                            meshes_ref.push(new_mesh);
+                        } else {
+                            let _old_mesh = replace(&mut meshes_ref[id], new_mesh);
+                            // todo: find out how to destroy the old mesh
+                        }
+
+                        mesh.mesh = Some(id);
+                        mesh.dirty = false;
                     }
 
-                    mesh.mesh = Some(id);
-                    mesh.dirty = false;
-                }
-
-                mesh.mesh.map(|id| {
-                    ((mat, id), VertexArgs::from_object_data(tform, tint))
+                    mesh.mesh.map(|id| {
+                        ((mat, id), VertexArgs::from_object_data(tform, tint))
+                    })
                 })
-            })
-            .for_each_group(|(mat, id), data| {
-                if let Some((mat, _)) = materials_ref.insert(factory, resources, mat) {
-                    statics_ref.insert(mat, id, data.drain(..));
-                }
-            });
+                .for_each_group(|(mat, id), data| {
+                    if let Some((mat, _)) = materials_ref.insert(factory, resources, mat) {
+                        statics_ref.insert(mat, id, data.drain(..));
+                    }
+                });
+        }
 
         self.static_batches.prune();
             
