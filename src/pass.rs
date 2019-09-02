@@ -155,7 +155,7 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resourc
 
         (&materials, &mut meshes, &transforms, tints.maybe())
             .join()
-            .map(|(mat, mesh, tform, tint)| {
+            .filter_map(|(mat, mesh, tform, tint)| {
                 let id = match mesh.mesh {
                     Some(mesh_id) => mesh_id,
                     None => meshes_ref.len(),
@@ -163,13 +163,17 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resourc
 
                 if mesh.dirty {
                     let crate::triangulate::Mesh {
-                        vbuf,
-                        ibuf,
-                    } = crate::triangulate::Mesh::build::<V>(&mesh.data, Pos::new(0.0, 0.0, 0.0), 1.0);
+                        pos,
+                        nml,
+                        tex,
+                        ind,
+                    } = crate::triangulate::Mesh::build::<V>(&mesh.data, Pos::new(0.0, 0.0, 0.0), 16.0);
 
                     let new_mesh = B::wrap_mesh(MeshBuilder::new()
-                        .with_indices(ibuf)
-                        .with_vertices(vbuf)
+                        .with_indices(ind)
+                        .with_vertices(pos)
+                        .with_vertices(nml)
+                        .with_vertices(tex)
                         .build(queue, factory)
                         .unwrap());
 
@@ -179,8 +183,14 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resourc
                         let _old_mesh = replace(&mut meshes_ref[id], new_mesh);
                         // todo: find out how to destroy the old mesh
                     }
+
+                    mesh.mesh = Some(id);
+                    mesh.dirty = false;
                 }
-                ((mat, id), VertexArgs::from_object_data(tform, tint))
+
+                mesh.mesh.map(|id| {
+                    ((mat, id), VertexArgs::from_object_data(tform, tint))
+                })
             })
             .for_each_group(|(mat, id), data| {
                 if let Some((mat, _)) = materials_ref.insert(factory, resources, mat) {

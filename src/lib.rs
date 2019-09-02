@@ -14,7 +14,7 @@ mod pass;
 pub use voxel::{Simple, Nested, AsVoxel, VoxelData};
 pub use bundle::VoxelBundle;
 
-pub type RenderVoxelPbr<V> = plugin::RenderVoxel<amethyst::renderer::pass::PbrPassDef, V>;
+pub type RenderVoxelPbr<V> = plugin::RenderVoxel<amethyst::renderer::pass::ShadedPassDef, V>;
 
 pub struct MutableVoxels<V: AsVoxel> {
 	pub(crate) data: V::Voxel,

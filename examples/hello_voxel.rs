@@ -71,7 +71,13 @@ impl SimpleState for Example {
 
         data.world
             .create_entity()
-            .with(MutableVoxels::<ExampleVoxel>::from_iter(ExampleVoxel, repeat_with(|| Simple::Material(1))))
+            .with(MutableVoxels::<ExampleVoxel>::from_iter(ExampleVoxel, repeat_with(|| {
+                if rand::random() {
+                    Simple::Material(1)
+                } else {
+                    Simple::Empty
+                }
+            })))
             .with(mtl)
             .with(Transform::default())
             .build();
@@ -113,7 +119,8 @@ fn main() -> amethyst::Result<()> {
     	.with(PrefabLoaderSystem::<MyPrefabData>::default(), "", &[])
     	.with_bundle(TransformBundle::new().with_dep(&[]))?
     	.with_bundle(
-            InputBundle::<StringBindings>::new().with_bindings_from_file(&key_bindings_path)?,
+            InputBundle::<StringBindings>::new()
+                .with_bindings_from_file(&key_bindings_path)?,
         )?
         .with_bundle(ArcBallControlBundle::<StringBindings>::new())?
     	.with_bundle(VoxelBundle::<ExampleVoxel>::new())?

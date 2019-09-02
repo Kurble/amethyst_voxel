@@ -1,10 +1,11 @@
+use std::iter::repeat;
 use crate::coordinate::*;
 use crate::voxel::*;
 use crate::side::*;
 
 use nalgebra_glm::*;
 
-use rendy::mesh::{AsVertex, PosNorm, VertexFormat};
+use rendy::mesh::{PosNorm, Position, Normal, TexCoord};
 
 pub(crate) struct Const<T>(T);
 
@@ -20,33 +21,23 @@ impl<T: VoxelData> Const<T> {
 
 /// Triangulated mesh data created from a single voxel definition.
 pub struct Mesh {
-    pub vbuf: Vec<Vertex>,
-    pub ibuf: Vec<u32>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Vertex {
-    pub pos: [f32; 3],
-    pub nml: [f32; 3],
-    pub mat: u32,
+    pub pos: Vec<Position>,
+    pub nml: Vec<Normal>,
+    pub tex: Vec<TexCoord>,
+    pub ind: Vec<u32>,
 }
 
 impl Mesh {
     /// Create a new mesh
     pub fn build<V: AsVoxel>(root: &V::Voxel, origin: Pos, scale: f32) -> Self {
         let mut result = Self { 
-            vbuf: Vec::with_capacity(2048), 
-            ibuf: Vec::with_capacity(2048) 
+            pos: Vec::new(), 
+            nml: Vec::new(),
+            tex: Vec::new(),
+            ind: Vec::new(),
         };
         root.triangulate_all(&mut result, origin, scale);
-
         result
-    }
-}
-
-impl AsVertex for Vertex {
-    fn vertex() -> VertexFormat {
-        VertexFormat::with_stride(PosNorm::vertex(), 36)
     }
 }
 
@@ -90,20 +81,16 @@ pub fn triangulate_face<T, S>(m: &mut Mesh, ori: Pos, sc: f32, mat: u32) where
     S: Side<T>,
 {
     let sc = sc * 0.5;
+    let quad = [vec3(-sc, sc, sc), vec3(sc, sc, sc), vec3(sc, -sc, sc), vec3(-sc, -sc, sc)];
     let transform = S::orientation();
     let center = vec3(ori.x+sc, ori.y+sc, ori.z+sc);
     let up = vec3(0.0, 0.0, 1.0);
 
-    m.vbuf.extend([vec3(-sc, sc, sc), vec3(sc, sc, sc), vec3(sc, -sc, sc), vec3(-sc, -sc, sc)]
-        .iter()
-        .map(|pos| Vertex {
-            pos: convert(transform*pos + center),
-            nml: convert(transform*up),
-            mat: mat,
-        })
-    );
+    m.pos.extend(quad.iter().map(|pos| Position(convert(transform*pos + center))));
+    m.nml.extend(repeat(Normal(convert(transform*up))).take(4));
+    m.tex.extend(repeat(TexCoord([0.0, 0.0])).take(4));
 
-    let begin = m.vbuf.len() as u32;
+    let begin = m.pos.len() as u32;
 
-    m.ibuf.extend_from_slice(&[begin, begin+1, begin+2, begin, begin+2, begin+3]);
+    m.ind.extend_from_slice(&[begin, begin+1, begin+2, begin, begin+2, begin+3]);
 }
