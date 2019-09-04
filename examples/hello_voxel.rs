@@ -50,23 +50,26 @@ impl SimpleState for Example {
         let materials: Vec<_> = {
             let mut materials = data.world.write_resource::<VoxelMaterialStorage>();
             repeat_with(|| materials.create(VoxelMaterial {
-                albedo: [rng.gen(), rng.gen(), rng.gen()],
+                albedo: [128 + rng.gen_range(0, 128), rng.gen(), rng.gen()],
                 alpha: 255,
                 emission: [0, 0, 0],
                 metallic: rng.gen(),
                 roughness: rng.gen(),
-            })).take(10).collect()
+            })).take(4).collect()
         };
+
+        let materials_ref = &materials;
 
         data.world
             .create_entity()
-            .with(MutableVoxels::<ExampleVoxel>::from_iter(ExampleVoxel, repeat_with(|| {
-                if rand::random() {
-                    Simple::Material(materials[rng.gen_range(0, 10)])
+            .with(MutableVoxels::<ExampleVoxel>::from_iter(ExampleVoxel, (0..16).flat_map(|z| (0..16).flat_map(move |y| (0..16).map(move |x| {
+                let limit = 5 + x/5 + z/3;
+                if y < limit || (y == limit && 16u8 > rand::random()) {
+                    Simple::Material(materials_ref[rng.gen_range(0, 4)])
                 } else {
                     Simple::Empty
                 }
-            })))
+            })))))
             .with(Transform::default())
             .build();
     }

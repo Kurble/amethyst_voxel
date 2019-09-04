@@ -8,6 +8,7 @@ use amethyst::renderer::{
     submodules::{DynamicVertexBuffer, EnvironmentSub, MaterialId, MaterialSub, SkinningSub},
     types::{Backend, Mesh},
     util,
+    skinning::{JointCombined},
 };
 
 use amethyst::core::{
@@ -23,7 +24,8 @@ use rendy::{
     },
     hal::{self, device::Device, pso},
     mesh::{AsVertex, VertexFormat, MeshBuilder},
-    shader::{Shader},
+    shader::{Shader, SpirvShader},
+    util::types::vertex::{Position, Normal, Tangent, Color},
 };
 use smallvec::SmallVec;
 use std::marker::PhantomData;
@@ -34,12 +36,29 @@ use crate::{
     MutableVoxels,
 };
 
-/// Draw opaque 3d meshes with specified shaders and texture set
 #[derive(Clone, Derivative)]
 #[derivative(Debug(bound = ""), Default(bound = ""))]
 pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef, V: AsVoxel> {
     marker: PhantomData<(B, D, V)>,
 }
+
+#[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: AsVoxel> {
+    pipeline_basic: B::GraphicsPipeline,
+    pipeline_layout: B::PipelineLayout,
+    static_batches: TwoLevelBatch<MaterialId, usize, SmallVec<[VertexArgs; 4]>>,
+    meshes: Vec<Mesh>,
+    vertex_format_base: Vec<VertexFormat>,
+    vertex_format_skinned: Vec<VertexFormat>,
+    env: EnvironmentSub<B>,
+    materials: MaterialSub<B, T::TextureSet>,
+    models: DynamicVertexBuffer<B, VertexArgs>,
+    marker: PhantomData<(T, V)>,
+}
+
+#[derive(Debug)]
+pub struct VoxelPassDef<T: Base3DPassDef>(PhantomData<T>);
 
 impl<B: Backend, T: Base3DPassDef, V: AsVoxel> DrawVoxelDesc<B, T, V> {
     pub fn new() -> Self {
@@ -103,21 +122,36 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroupDesc<B, Res
     }
 }
 
-/// Base implementation of a 3D render pass which can be consumed by actual 3D render passes,
-/// such as [pass::pbr::DrawPbr]
-#[derive(Derivative)]
-#[derivative(Debug(bound = ""))]
-pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: AsVoxel> {
-    pipeline_basic: B::GraphicsPipeline,
-    pipeline_layout: B::PipelineLayout,
-    static_batches: TwoLevelBatch<MaterialId, usize, SmallVec<[VertexArgs; 4]>>,
-    meshes: Vec<Mesh>,
-    vertex_format_base: Vec<VertexFormat>,
-    vertex_format_skinned: Vec<VertexFormat>,
-    env: EnvironmentSub<B>,
-    materials: MaterialSub<B, T::TextureSet>,
-    models: DynamicVertexBuffer<B, VertexArgs>,
-    marker: PhantomData<(T, V)>,
+impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
+    const NAME: &'static str = "Voxel";
+    type TextureSet = T::TextureSet;
+
+    fn vertex_shader() -> &'static SpirvShader {
+        &VOXEL_VERTEX
+    }
+    fn vertex_skinned_shader() -> &'static SpirvShader {
+        &VOXEL_VERTEX
+    }
+    fn fragment_shader() -> &'static SpirvShader {
+        T::fragment_shader()
+    }
+    fn base_format() -> Vec<VertexFormat> {
+        vec![
+            Position::vertex(),
+            Normal::vertex(),
+            Tangent::vertex(),
+            Color::vertex(),
+        ]
+    }
+    fn skinned_format() -> Vec<VertexFormat> {
+        vec![
+            Position::vertex(),
+            Normal::vertex(),
+            Tangent::vertex(),
+            Color::vertex(),
+            JointCombined::vertex(),
+        ]
+    }
 }
 
 impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resources> for DrawVoxel<B, T, V> {
@@ -166,16 +200,18 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resourc
                         let crate::triangulate::Mesh {
                             pos,
                             nml,
+                            tan,
                             tex,
                             ind,
                         } = crate::triangulate::Mesh::build::<V>(&mesh.data, Pos::new(0.0, 0.0, 0.0), 16.0);
 
-                        let tex: Vec<_> = tex.into_iter().map(|mat| materials.coord(mat)).collect();
+                        let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| materials.coord(mat, ao)).collect();
 
                         let new_mesh = B::wrap_mesh(MeshBuilder::new()
                             .with_indices(ind)
                             .with_vertices(pos)
                             .with_vertices(nml)
+                            .with_vertices(tan)
                             .with_vertices(tex)
                             .build(queue, factory)
                             .unwrap());
@@ -259,6 +295,14 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resourc
                 .destroy_pipeline_layout(self.pipeline_layout);
         }
     }
+}
+
+lazy_static::lazy_static! {
+    static ref VOXEL_VERTEX: SpirvShader = SpirvShader::new(
+        include_bytes!("../compiled/voxels.vert.spv").to_vec(),
+        pso::ShaderStageFlags::VERTEX,
+        "main",
+    );
 }
 
 fn build_pipelines<B: Backend, T: Base3DPassDef>(

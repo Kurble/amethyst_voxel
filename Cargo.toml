@@ -13,3 +13,4 @@ failure = "0.1"
 rendy = { version = "^0.3.2", default-features = false, features = ["base", "mesh-obj", "texture-image", "texture-palette", "serde-1"] }
 rand = "0.7"
 byteorder = "1"
+lazy_static = "1.3"

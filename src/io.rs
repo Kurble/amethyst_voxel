@@ -24,6 +24,10 @@ fn bit(field: u32, bit: u32) -> bool {
     (field & (0x01 << bit)) > 0
 }
 
+//pub fn load_vox_from_file<T: VoxelData + Default, P: AsRef<Path>>(path: P, store: &mut VoxelMaterialStorage) -> Result<Vec<Nested<T, (), Simple>>> {
+    // todo
+//}
+
 /// load a MagicaVoxel .vox file. Since the amount of subvoxels is fixed by the voxel format,
 ///  the MagicaVoxel model is centered and cropped to fit in the fixed voxel format.
 /// Any materials that don't exist in the world yet will be added.

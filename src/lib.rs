@@ -18,7 +18,7 @@ pub use bundle::VoxelBundle;
 pub use material::{VoxelMaterial, VoxelMaterialStorage};
 pub use io::load_vox;
 
-pub type RenderVoxelPbr<V> = plugin::RenderVoxel<amethyst::renderer::pass::ShadedPassDef, V>;
+pub type RenderVoxelPbr<V> = plugin::RenderVoxel<pass::VoxelPassDef<amethyst::renderer::pass::PbrPassDef>, V>;
 
 pub struct MutableVoxels<V: AsVoxel> {
 	pub(crate) data: V::Voxel,

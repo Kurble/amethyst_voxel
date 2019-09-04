@@ -7,7 +7,7 @@ use amethyst::{
         types::{Texture},
         mtl::{Material, MaterialDefaults},
         rendy::{
-            mesh::TexCoord,
+            mesh::Color,
             hal::image::{Kind, ViewKind},
             texture::{
                 TextureBuilder,
@@ -56,11 +56,11 @@ impl VoxelMaterialStorage {
         }))
     }
 
-    pub(crate) fn coord(&self, material: u32) -> TexCoord {
+    pub(crate) fn coord(&self, material: u32, ao: f32) -> Color {
         let x = (material as usize % self.size) as f32;
         let y = (material as usize / self.size) as f32;
         let w = self.size as f32;
-        TexCoord([x / w, y / w])
+        Color([x / w, y / w, ao, 1.0])
     }
 
     pub(crate) fn handle(&self) -> Option<&Handle<Material>> {
