@@ -305,6 +305,7 @@ lazy_static::lazy_static! {
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_pipelines<B: Backend, T: Base3DPassDef>(
     factory: &Factory<B>,
     subpass: hal::pass::Subpass<'_, B>,

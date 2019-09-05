@@ -203,7 +203,7 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
         //  integrated values
         let mut current_i = [current[0] as i64, current[1] as i64, current[2] as i64];
         for i in 0..3 {
-            if current[i].floor() == current[i] && current_direction[i] < 0.0 {
+            if (current[i].floor() - current[i]).abs() < std::f32::EPSILON && current_direction[i] < 0.0 {
                 current_i[i] -= 1;
             }
         }
@@ -215,14 +215,14 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
             } else {
                 let target = if direction < 0.0 {
                     let t = position.floor();
-                    if t == position {
+                    if (t - position).abs() < std::f32::EPSILON {
                         t - 1.0
                     } else {
                         t
                     }
                 } else {
                     let t = position.ceil();
-                    if t == position {
+                    if (t - position).abs() < std::f32::EPSILON {
                         t + 1.0
                     } else {
                         t
@@ -276,17 +276,17 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
                 let e = (d+1)%3;
                 let f = (d+2)%3;
                 if i[d] <= i[e] && i[d] <= i[f] {
-                    current = current + current_direction * i[d];
+                    current += current_direction * i[d];
                     if current_direction[d] < 0.0 {
                         current_i[d] -= 1;
                         current[d] = current_i[d] as f32;
-                        if let Some(hit) = hit(current_i.clone()) {
+                        if let Some(hit) = hit(current_i) {
                             return Some(hit);
                         }
                     } else {
                         current_i[d] += 1;
                         current[d] = current_i[d] as f32;
-                        if let Some(hit) = hit(current_i.clone()) {
+                        if let Some(hit) = hit(current_i) {
                             return Some(hit);
                         }
                     }
@@ -314,25 +314,25 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
     }
 
     pub fn get(&self, index: usize) -> Option<&V> {
-        match self {
-            &Nested::Empty { .. } => None,
-            &Nested::Detail { ref detail, .. } => detail.get(index),
-            &Nested::Material { .. } => None,
+        match *self {
+            Nested::Empty { .. } => None,
+            Nested::Detail { ref detail, .. } => detail.get(index),
+            Nested::Material { .. } => None,
         }
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut V> {
-        match self {
-            &mut Nested::Empty { .. } => None,
-            &mut Nested::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
-            &mut Nested::Material { .. } => None,
+        match *self {
+            Nested::Empty { .. } => None,
+            Nested::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
+            Nested::Material { .. } => None,
         }
     }
 }
 
 impl Voxel<()> for Simple {
     fn visible(&self) -> bool {
-        if let &Simple::Material(_) = self {
+        if let Simple::Material(_) = *self {
             true
         } else {
             false
@@ -340,7 +340,7 @@ impl Voxel<()> for Simple {
     }
 
     fn render(&self) -> bool {
-        if let &Simple::Empty = self {
+        if let Simple::Empty = *self {
             true
         } else {
             false
@@ -348,14 +348,14 @@ impl Voxel<()> for Simple {
     }
 
     fn triangulate_self<S: Side<()>>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, origin: Pos, scale: f32) {
-        if let &Simple::Material(material) = self {
+        if let Simple::Material(material) = *self {
             triangulate_face::<(), S>(mesh, ao, origin, scale, material);
         }
     }
 
     fn triangulate_all(&self, mesh: &mut Mesh, origin: Pos, scale: f32) {
         let ao = AmbientOcclusion::build(self);
-        if let &Simple::Material(material) = self {
+        if let Simple::Material(material) = *self {
             triangulate_face::<(), Left>(mesh, &ao, origin, scale, material);
             triangulate_face::<(), Right>(mesh, &ao, origin, scale, material);
             triangulate_face::<(), Below>(mesh, &ao, origin, scale, material);
@@ -367,7 +367,7 @@ impl Voxel<()> for Simple {
 
     fn hit(&self, _transform: Mat4, _origin: Vec3, _direction: Vec3) -> bool {
         // todo: check if the voxel is missed entirely.
-        match self {
+        match *self {
             Simple::Empty => false,
             Simple::Material(_) => true,
         }
@@ -376,27 +376,27 @@ impl Voxel<()> for Simple {
 
 impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, V> {
     fn visible(&self) -> bool {
-        match self {
-            &Nested::Empty { .. } => false,
-            &Nested::Detail { ref data, .. } => !data.empty(),
-            &Nested::Material { .. } => true,
+        match *self {
+            Nested::Empty { .. } => false,
+            Nested::Detail { ref data, .. } => !data.empty(),
+            Nested::Material { .. } => true,
         }
     }
 
     fn render(&self) -> bool {
-        match self {
-            &Nested::Empty { .. } => true,
-            &Nested::Detail { ref data, .. } => !data.solid(),
-            &Nested::Material { .. } => false,
+        match *self {
+            Nested::Empty { .. } => true,
+            Nested::Detail { ref data, .. } => !data.solid(),
+            Nested::Material { .. } => false,
         }
     }
 
     fn triangulate_self<S: Side<T>>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, origin: Pos, scale: f32) {
-        match self {
-            &Nested::Empty { .. } =>
+        match *self {
+            Nested::Empty { .. } =>
                 (),
 
-            &Nested::Detail { ref detail, .. } => match S::SIDE {
+            Nested::Detail { ref detail, .. } => match S::SIDE {
                 0 => triangulate_detail::<T,U,V,S,Right>(mesh, ao, origin, scale, detail.as_slice()),
                 1 => triangulate_detail::<T,U,V,S,Left>(mesh, ao, origin, scale, detail.as_slice()),
                 2 => triangulate_detail::<T,U,V,S,Above>(mesh, ao, origin, scale, detail.as_slice()),
@@ -406,7 +406,7 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, 
                 _ => panic!(),
             },
 
-            &Nested::Material { material, .. } =>
+            Nested::Material { material, .. } =>
                 triangulate_face::<T, S>(mesh, ao, origin, scale, material),
         }
     }
@@ -424,10 +424,10 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, 
 
     fn hit(&self, transform: Mat4, origin: Vec3, direction: Vec3) -> bool {
         // todo check if we miss entirely
-        match self {
-            &Nested::Empty { .. } =>  return false,
-            &Nested::Detail { .. } => (),
-            &Nested::Material { .. } => return true,
+        match *self {
+            Nested::Empty { .. } =>  return false,
+            Nested::Detail { .. } => (),
+            Nested::Material { .. } => return true,
         };
 
         self.hit_detect(transform, origin, direction)
@@ -439,20 +439,20 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Deref for Nested<T, U, V> 
     type Target = T;
 
     fn deref(&self) -> &T {
-        match self {
-            &Nested::Empty { ref data, .. } |
-            &Nested::Detail { ref data, .. } |
-            &Nested::Material { ref data, .. } => data,
+        match *self {
+            Nested::Empty { ref data, .. } |
+            Nested::Detail { ref data, .. } |
+            Nested::Material { ref data, .. } => data,
         }
     }
 }
 
 impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> DerefMut for Nested<T, U, V> {
     fn deref_mut(&mut self) -> &mut T {
-        match self {
-            &mut Nested::Empty { ref mut data, .. } |
-            &mut Nested::Detail { ref mut data, .. } |
-            &mut Nested::Material { ref mut data, .. } => data,
+        match *self {
+            Nested::Empty { ref mut data, .. } |
+            Nested::Detail { ref mut data, .. } |
+            Nested::Material { ref mut data, .. } => data,
         }
     }
 }

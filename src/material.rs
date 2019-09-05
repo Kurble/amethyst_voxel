@@ -104,6 +104,7 @@ fn build_texture<'a, I: Iterator<Item=[u8;4]>>(width: usize, iter: I) -> Texture
             .collect::<Vec<_>>()))
 }
 
+#[allow(clippy::type_complexity)]
 impl<'a> System<'a> for VoxelMaterialSystem {
     type SystemData = (
         Write<'a, VoxelMaterialStorage>, 

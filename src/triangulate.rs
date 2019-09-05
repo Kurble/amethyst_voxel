@@ -20,7 +20,7 @@ impl<T: VoxelData> Const<T> {
     pub const DZ: usize = Self::DY * Self::WIDTH;
     pub const SCALE: f32 = 1.0 / Self::WIDTH as f32;
 
-    pub fn to_index(x: usize, y: usize, z: usize) -> usize {
+    pub fn coord_to_index(x: usize, y: usize, z: usize) -> usize {
         x * Self::DX + y * Self::DY + z * Self::DZ
     }
 }
@@ -66,10 +66,10 @@ impl Mesh {
 
 impl AmbientOcclusion<'_> {
     pub fn sub(&self, x: usize, y: usize, z: usize) -> AmbientOcclusion {
-        match self {
-            &AmbientOcclusion::Small{ ao } => AmbientOcclusion::Small{ ao },
-            &AmbientOcclusion::Borrowed{ ao } => ao.sub(x, y, z),
-            &AmbientOcclusion::Big{ ref ao, w } => {
+        match *self {
+            AmbientOcclusion::Small{ ao } => AmbientOcclusion::Small{ ao },
+            AmbientOcclusion::Borrowed{ ao } => ao.sub(x, y, z),
+            AmbientOcclusion::Big{ ref ao, w } => {
                 let i = x+y*w+z*w*w;
                 let x = 1;
                 let y = w;
@@ -83,9 +83,9 @@ impl AmbientOcclusion<'_> {
     }
 
     pub fn quad<T: VoxelData, S: Side<T>>(&self) -> [f32; 4] {
-        let f = |d: u16, s: u16| 1.0 - ((d >> s) & 0x03) as f32 / 4.0;
-        match self {
-            &AmbientOcclusion::Small{ ao } => {
+        let f = |d: u16, s: u16| 1.0 - f32::from((d >> s) & 0x03) / 4.0;
+        match *self {
+            AmbientOcclusion::Small{ ao } => {
                 match S::SIDE {
                     0 => [f(ao[6], 10), f(ao[2], 10), f(ao[0], 10), f(ao[4], 10)],
                     1 => [f(ao[3],  8), f(ao[7],  8), f(ao[5],  8), f(ao[1],  8)],
@@ -96,7 +96,7 @@ impl AmbientOcclusion<'_> {
                     _ => unreachable!(),
                 }
             },
-            &_ => unreachable!(),
+            _ => unreachable!(),
         }        
     }
 }
@@ -104,7 +104,7 @@ impl AmbientOcclusion<'_> {
 impl<T: VoxelData, U: VoxelData, V: Voxel<U>> BuildAmbientOcclusion<T, Nested<T, U, V>> for AmbientOcclusion<'_> {
     fn build(root: &Nested<T, U, V>) -> AmbientOcclusion {
         let w = Const::<T>::AO_WIDTH as isize;
-        match root {
+        match *root {
             Nested::Empty{ .. } |
             Nested::Material{ .. } => AmbientOcclusion::Small {  
                 ao: [0xfff; 8],
@@ -114,20 +114,20 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U>> BuildAmbientOcclusion<T, Nested<T,
                 let bound = |x| x < 0 || x > Const::<T>::LAST as isize;
                 let sample = |x, y, z| if bound(x) || bound(y) || bound(z) {
                     0
-                } else if detail[Const::<T>::to_index(x as usize, y as usize, z as usize)].visible() { 
+                } else if detail[Const::<T>::coord_to_index(x as usize, y as usize, z as usize)].visible() { 
                     1 
                 } else { 
                     0 
                 };
                 let process = |s: [u16; 8]| {
-                    let a = (s[0]+s[1]+s[4]+s[5]).min(3);
-                    let b = (s[2]+s[3]+s[6]+s[7]).min(3);
-                    let c = (s[0]+s[1]+s[2]+s[3]).min(3);
-                    let d = (s[4]+s[5]+s[6]+s[7]).min(3);
-                    let e = (s[0]+s[2]+s[4]+s[6]).min(3);
-                    let f = (s[1]+s[3]+s[5]+s[7]).min(3);
+                    let neg_x = (s[0]+s[1]+s[4]+s[5]).min(3);
+                    let pos_x = (s[2]+s[3]+s[6]+s[7]).min(3);
+                    let neg_y = (s[0]+s[1]+s[2]+s[3]).min(3);
+                    let pos_y = (s[4]+s[5]+s[6]+s[7]).min(3);
+                    let neg_z = (s[0]+s[2]+s[4]+s[6]).min(3);
+                    let pos_z = (s[1]+s[3]+s[5]+s[7]).min(3);
 
-                    (a << 10)|(b << 8)|(c << 6)|(d << 4)|(e << 2)|(f)
+                    (neg_x << 10)|(pos_x << 8)|(neg_y << 6)|(pos_y << 4)|(neg_z << 2)|(pos_z)
                 };
 
                 AmbientOcclusion::Big {
@@ -155,7 +155,7 @@ impl BuildAmbientOcclusion<(), Simple> for AmbientOcclusion<'_> {
     }
 }
 
-pub fn triangulate_detail<'a, T, U, V, S, Q>(m: &mut Mesh, ao: &'a AmbientOcclusion<'a>, origin: Pos, scale: f32, sub: &[V])
+pub fn triangulate_detail<'a, T, U, V, S, Q>(mesh: &mut Mesh, ao: &'a AmbientOcclusion<'a>, origin: Pos, scale: f32, sub: &[V])
     where
         T: VoxelData,
         U: VoxelData,
@@ -181,7 +181,7 @@ pub fn triangulate_detail<'a, T, U, V, S, Q>(m: &mut Mesh, ao: &'a AmbientOcclus
                 };
 
                 // add the visible face
-                sub[i].triangulate_self::<Q>(m, &ao.sub(x, y, z), src, scale);
+                sub[i].triangulate_self::<Q>(mesh, &ao.sub(x, y, z), src, scale);
             }
         }
     }
