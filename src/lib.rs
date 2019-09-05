@@ -14,7 +14,7 @@ mod system;
 mod plugin;
 mod pass;
 
-pub use voxel::{Simple, Nested, AsVoxel, VoxelData};
+pub use voxel::{Simple, Nested, AsVoxel, VoxelData, Context};
 pub use bundle::VoxelBundle;
 pub use material::{VoxelMaterial, VoxelMaterialStorage};
 pub use io::load_vox;
@@ -26,6 +26,15 @@ pub struct MutableVoxels<V: AsVoxel> {
 	pub(crate) dirty: bool,
 	pub(crate) mesh: Option<usize>,
 }
+
+pub struct MutableChunkedVoxels<V: AsVoxel> {
+	data: Vec<MutableVoxels<V>>,
+	dims: [usize; 3],
+	center: [isize; 3],
+	//
+}
+
+pub struct Focus<'a, V: AsVoxel>([isize; 3], &'a MutableChunkedVoxels<V>);
 
 use std::ops::{Deref, DerefMut};
 
@@ -66,6 +75,34 @@ impl<V: AsVoxel> DerefMut for MutableVoxels<V> {
 	}
 }
 
+impl<'a, V: AsVoxel> Focus<'a, V> {
+	fn find(&self, x: isize, y: isize, z: isize) -> Option<(usize, usize)> {
+		//let pitch = Const::<V::Data>::WIDTH as isize;
+		//let grid = |x| if x >= 0 { x / pitch } else { (x+1) / pitch - 1};
+		//let coord = [grid(x), grid(y), grid(z)];
+		//let
+		None
+	}
+}
+
+impl<'a, V: AsVoxel> Context for Focus<'a, V> {
+	fn visible(&self, x: isize, y: isize, z: isize) -> bool {
+		if let Some((chunk, index)) = self.find(x, y, z) {
+			// todo
+		}
+
+		false
+	}
+
+	fn render(&self, x: isize, y: isize, z: isize) -> bool {
+		false
+	}
+}
+
 impl<V: AsVoxel + 'static> amethyst::ecs::Component for MutableVoxels<V> {
+	type Storage = amethyst::ecs::DenseVecStorage<Self>;
+}
+
+impl<V: AsVoxel + 'static> amethyst::ecs::Component for MutableChunkedVoxels<V> {
 	type Storage = amethyst::ecs::DenseVecStorage<Self>;
 }

@@ -37,7 +37,7 @@ impl<T: VoxelData> Const<T> {
 
 impl Mesh {
     /// Create a new mesh
-    pub fn build<V: AsVoxel>(root: &V::Voxel, origin: Pos, scale: f32) -> Self {
+    pub fn build<V: AsVoxel>(root: &V::Voxel, ao: &AmbientOcclusion, origin: Pos, scale: f32) -> Self {
         let mut result = Self { 
             pos: Vec::new(), 
             nml: Vec::new(),
@@ -45,7 +45,7 @@ impl Mesh {
             tex: Vec::new(),
             ind: Vec::new(),
         };
-        root.triangulate_all(&mut result, origin, scale);
+        root.triangulate_all(&mut result, ao, origin, scale);
         result
     }
 }

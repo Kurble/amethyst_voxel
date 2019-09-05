@@ -15,16 +15,16 @@ pub enum AmbientOcclusion<'a> {
     },
 }
 
-pub(crate) trait BuildAmbientOcclusion<T: VoxelData, U: Voxel<T>> {
-    fn build(from: &U) -> AmbientOcclusion;
+pub trait BuildAmbientOcclusion<'a, T: VoxelData, U: Voxel<T>> {
+    fn build<C: Context>(from: &U, neighbours: &C) -> AmbientOcclusion<'a>;
 }
 
-impl<T, U, V> BuildAmbientOcclusion<T, Nested<T, U, V>> for AmbientOcclusion<'_> where
+impl<'a, T, U, V> BuildAmbientOcclusion<'a, T, Nested<T, U, V>> for AmbientOcclusion<'a> where
     T: VoxelData, 
     U: VoxelData, 
     V: Voxel<U>
 {
-    fn build(root: &Nested<T, U, V>) -> AmbientOcclusion {
+    fn build<C: Context>(root: &Nested<T, U, V>, neighbours: &C) -> Self {
         let w = Const::<T>::AO_WIDTH as isize;
         match *root {
             Nested::Empty{ .. } |
@@ -34,13 +34,11 @@ impl<T, U, V> BuildAmbientOcclusion<T, Nested<T, U, V>> for AmbientOcclusion<'_>
 
             Nested::Detail{ ref detail, .. } => {
                 let bound = |x| x < 0 || x > Const::<T>::LAST as isize;
-                let sample = |x, y, z| if bound(x) || bound(y) || bound(z) {
-                    0
-                } else if detail[Const::<T>::coord_to_index(x as usize, y as usize, z as usize)].visible() { 
-                    1 
-                } else { 
-                    0 
-                };
+                let sample = |x, y, z| {
+                	if bound(x)||bound(y)||bound(z) { if neighbours.visible(x, y, z) { 1 } else { 0 } }
+                	else if detail[Const::<T>::coord_to_index(x as usize, y as usize, z as usize)].visible() { 1 }
+                	else { 0 }
+	            };
                 let process = |s: [u16; 8]| {
                     let neg_x = (s[0]+s[1]+s[4]+s[5]).min(3);
                     let pos_x = (s[2]+s[3]+s[6]+s[7]).min(3);
@@ -69,8 +67,8 @@ impl<T, U, V> BuildAmbientOcclusion<T, Nested<T, U, V>> for AmbientOcclusion<'_>
     }
 }
 
-impl BuildAmbientOcclusion<(), Simple> for AmbientOcclusion<'_> { 
-    fn build(_: &Simple) -> AmbientOcclusion {
+impl<'a> BuildAmbientOcclusion<'a, (), Simple> for AmbientOcclusion<'a> { 
+    fn build<C: Context>(_: &Simple, _: &C) -> Self {
         AmbientOcclusion::Small {  
             ao: [0xfff; 8],
         }

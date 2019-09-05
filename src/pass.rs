@@ -33,6 +33,7 @@ use crate::{
     voxel::AsVoxel,
     coordinate::Pos,
     material::VoxelMaterialStorage,
+    ambient_occlusion::*,
     MutableVoxels,
 };
 
@@ -68,7 +69,12 @@ impl<B: Backend, T: Base3DPassDef, V: AsVoxel> DrawVoxelDesc<B, T, V> {
     }
 }
 
-impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroupDesc<B, Resources> for DrawVoxelDesc<B, T, V> {
+impl<'a, B, T, V> RenderGroupDesc<B, Resources> for DrawVoxelDesc<B, T, V> where
+    B: Backend,
+    T: Base3DPassDef,
+    V: 'static + AsVoxel,
+    AmbientOcclusion<'a>: BuildAmbientOcclusion<'a, <V as AsVoxel>::Data, <V as AsVoxel>::Voxel>, 
+{
     fn build(
         self,
         _ctx: &GraphContext<B>,
@@ -154,7 +160,12 @@ impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
     }
 }
 
-impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resources> for DrawVoxel<B, T, V> {
+impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
+    B: Backend,
+    T: Base3DPassDef,
+    V: 'static + AsVoxel,
+    AmbientOcclusion<'a>: BuildAmbientOcclusion<'a, <V as AsVoxel>::Data, <V as AsVoxel>::Voxel>, 
+{
     fn prepare(
         &mut self,
         factory: &Factory<B>,
@@ -197,13 +208,15 @@ impl<B: Backend, T: Base3DPassDef, V: 'static +  AsVoxel> RenderGroup<B, Resourc
                     };
 
                     if mesh.dirty {
+                        let ao = AmbientOcclusion::build(&mesh.data, &());
+
                         let crate::triangulate::Mesh {
                             pos,
                             nml,
                             tan,
                             tex,
                             ind,
-                        } = crate::triangulate::Mesh::build::<V>(&mesh.data, Pos::new(0.0, 0.0, 0.0), 16.0);
+                        } = crate::triangulate::Mesh::build::<V>(&mesh.data, &ao, Pos::new(0.0, 0.0, 0.0), 16.0);
 
                         let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| materials.coord(mat, ao)).collect();
 

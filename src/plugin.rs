@@ -1,5 +1,6 @@
 use crate::voxel::AsVoxel;
 use crate::pass::*;
+use crate::ambient_occlusion::*;
 use amethyst::{
     renderer::{
         bundle::{RenderOrder, RenderPlan, RenderPlugin, Target},
@@ -28,7 +29,12 @@ impl<D: Base3DPassDef, V: AsVoxel> RenderVoxel<D, V> {
     }
 }
 
-impl<B: Backend, D: Base3DPassDef, V: 'static +  AsVoxel> RenderPlugin<B> for RenderVoxel<D, V> {
+impl<'ao, B, D, V> RenderPlugin<B> for RenderVoxel<D, V> where
+    B: Backend,
+    D: Base3DPassDef,
+    V: 'static + AsVoxel,
+    AmbientOcclusion<'ao>: BuildAmbientOcclusion<'ao, <V as AsVoxel>::Data, <V as AsVoxel>::Voxel>, 
+{
     fn on_build<'a, 'b>(
         &mut self,
         _builder: &mut DispatcherBuilder<'a, 'b>,
