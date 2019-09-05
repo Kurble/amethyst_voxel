@@ -98,9 +98,9 @@ fn main() -> amethyst::Result<()> {
 
     let assets_directory = app_root.join("examples/assets/");
 
-    let display_config_path = app_root.join("config/display.ron");
+    let display_config_path = app_root.join("examples/config/display.ron");
 
-    let key_bindings_path = app_root.join("config/input.ron");
+    let key_bindings_path = app_root.join("examples/config/input.ron");
 
     let game_data = GameDataBuilder::default()
     	.with(PrefabLoaderSystem::<MyPrefabData>::default(), "", &[])
