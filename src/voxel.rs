@@ -7,6 +7,7 @@ use nalgebra_glm::*;
 
 use crate::coordinate::Pos;
 use crate::triangulate::*;
+use crate::ambient_occlusion::*;
 use crate::side::*;
 use crate::material::VoxelMaterialId;
 

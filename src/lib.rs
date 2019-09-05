@@ -5,6 +5,7 @@ mod coordinate;
 mod side;
 mod voxel;
 mod triangulate;
+mod ambient_occlusion;
 mod material;
 mod io;
 
