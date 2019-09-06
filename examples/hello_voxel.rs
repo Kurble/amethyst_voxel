@@ -36,9 +36,39 @@ impl VoxelData for ExampleVoxel {
 
 struct Example;
 
+struct FlatLoader {
+    materials: Vec<VoxelMaterialId>,
+}
+
+impl Source<ExampleVoxel> for FlatLoader {
+    fn load(&mut self, _coord: [isize; 3]) -> VoxelFuture<ExampleVoxel> {
+        let mut rng = rand::thread_rng();
+
+        let materials_ref = &self.materials;
+
+        let chunk = Nested::Detail {
+            data: ExampleVoxel,
+            detail: std::sync::Arc::new((0..16)
+                .flat_map(|z| (0..16)
+                    .flat_map(move |y| (0..16)
+                        .map(move |x| {
+                            let limit = 5;
+                            if y < limit || (y == limit && 16u8 > rand::random()) {
+                                Simple::Material(materials_ref[rng.gen_range(0, 4)])
+                            } else {
+                                Simple::Empty
+                            }
+                        }))).collect()),
+        };
+
+        Box::new(futures::future::ok(chunk))
+    }
+}
+
 impl SimpleState for Example {
     fn on_start(&mut self, data: StateData<GameData>) {
-        data.world.register::<MutableVoxels<ExampleVoxel>>();
+        data.world.register::<MutableVoxel<ExampleVoxel>>();
+        data.world.register::<MutableVoxelWorld<ExampleVoxel>>();
 
         let prefab_handle = data.world.exec(|loader: PrefabLoader<'_, MyPrefabData>| {
             loader.load("prefab/arc_ball_camera.ron", RonFormat, ())
@@ -58,11 +88,9 @@ impl SimpleState for Example {
             })).take(4).collect()
         };
 
-        let materials_ref = &materials;
-
-        data.world
+        /*data.world
             .create_entity()
-            .with(MutableVoxels::<ExampleVoxel>::from_iter(ExampleVoxel, (0..16).flat_map(|z| (0..16).flat_map(move |y| (0..16).map(move |x| {
+            .with(MutableVoxel::<ExampleVoxel>::from_iter(ExampleVoxel, (0..16).flat_map(|z| (0..16).flat_map(move |y| (0..16).map(move |x| {
                 let limit = 5 + x/5 + z/3;
                 if y < limit || (y == limit && 16u8 > rand::random()) {
                     Simple::Material(materials_ref[rng.gen_range(0, 4)])
@@ -70,6 +98,18 @@ impl SimpleState for Example {
                     Simple::Empty
                 }
             })))))
+            .with(Transform::default())
+            .build();*/
+
+        let loader = Box::new(FlatLoader { materials });
+
+        let mut world = MutableVoxelWorld::<ExampleVoxel>::new(loader, [4, 4, 1], 16.0);
+
+        world.load([0.0, 0.0, 0.0], 64.0);
+
+        data.world
+            .create_entity()
+            .with(world)
             .with(Transform::default())
             .build();
     }

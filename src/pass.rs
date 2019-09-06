@@ -34,7 +34,7 @@ use crate::{
     coordinate::Pos,
     material::VoxelMaterialStorage,
     ambient_occlusion::*,
-    MutableVoxels,
+    MutableVoxel,
 };
 
 #[derive(Clone, Derivative)]
@@ -182,7 +182,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
             tints,
         ) = <(
             //ReadExpect<'_, Visibility>,
-            WriteStorage<'_, MutableVoxels<V>>,
+            WriteStorage<'_, MutableVoxel<V>>,
             Read<'_, VoxelMaterialStorage>,
             ReadStorage<'_, Transform>,
             ReadStorage<'_, Tint>,

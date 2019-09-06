@@ -34,6 +34,9 @@ pub trait VoxelData: 'static + Clone + Send + Sync {
 
 /// The required functionality to triangulate voxels.
 pub trait Voxel<T: VoxelData>: 'static + Clone + Send + Sync {
+    type ChildData: VoxelData;
+    type Child: Voxel<Self::ChildData>;
+
     /// Returns whether this voxel is visible, i.e. if it has geometry.
     fn visible(&self) -> bool;
 
@@ -48,6 +51,18 @@ pub trait Voxel<T: VoxelData>: 'static + Clone + Send + Sync {
 
     /// Perform hitdetect on this voxel. Returns whether the voxel was hit.
     fn hit(&self, transform: Mat4, origin: Vec3, direction: Vec3) -> bool;
+
+    /// Returns a child voxel where applicable
+    fn child(&self, index: usize) -> Option<&Self::Child>;
+
+    /// Construct a voxel from an iterator of children
+    fn from_iter<I: IntoIterator<Item=Self::Child>>(data: T, iter: I) -> Self;
+}
+
+/// Trait that translates a tuple of VoxelData types to a Voxel type.
+pub trait AsVoxel: Send + Sync {
+    type Data: VoxelData;
+    type Voxel: Voxel<Self::Data> + Clone;
 }
 
 /// Trait for retrieving neighbour information between separate root voxels.
@@ -57,19 +72,6 @@ pub trait Context {
 
     /// Same as Voxel::render, but accepts a relative coordinate for selecting a child voxel.
     fn render(&self, x: isize, y: isize, z: isize) -> bool;
-}
-
-/// Trait that translates a tuple of VoxelData types to a Voxel type.
-pub trait AsVoxel: Send + Sync {
-    type Data: VoxelData;
-    type Voxel: Voxel<Self::Data> + Clone;
-}
-
-pub trait AsNestedVoxel: AsVoxel {
-    type ChildData: VoxelData;
-    type Child: Voxel<Self::ChildData>;
-
-    fn from_iter<I: IntoIterator<Item=Self::Child>>(data: Self::Data, iter: I) -> Self::Voxel;
 }
 
 /// A single voxel with nothing special.
@@ -115,26 +117,14 @@ impl VoxelData for () {
 }
 
 impl Context for () {
-    fn visible(&self, x: isize, y: isize, z: isize) -> bool { false }
+    fn visible(&self, _: isize, _: isize, _: isize) -> bool { false }
 
-    fn render(&self, x: isize, y: isize, z: isize) -> bool { false }
+    fn render(&self, _: isize, _: isize, _: isize) -> bool { false }
 }
 
 impl<T: VoxelData> AsVoxel for T {
     type Data = T;
     type Voxel = Nested<T, (), Simple>;
-}
-
-impl<T: VoxelData> AsNestedVoxel for T {
-    type ChildData = ();
-    type Child = Simple;
-
-    fn from_iter<I: IntoIterator<Item=Self::Child>>(data: T, iter: I) -> Self::Voxel {
-        Nested::Detail {
-            data,
-            detail: Arc::new(Vec::from_iter(iter.into_iter().take(Const::<T>::COUNT))),
-        }
-    }
 }
 
 macro_rules! define_chain {
@@ -143,7 +133,7 @@ macro_rules! define_chain {
             type Data = $head;
             type Voxel = Nested<$head, <($($tail),+) as AsVoxel>::Data, <($($tail),+) as AsVoxel>::Voxel>;
         }
-        impl<$head: VoxelData, $($tail: VoxelData),+> AsNestedVoxel for ($head, $($tail),+) where ($($tail),+): AsVoxel {
+        /*impl<$head: VoxelData, $($tail: VoxelData),+> AsNestedVoxel for ($head, $($tail),+) where ($($tail),+): AsVoxel {
             type ChildData = <($($tail),+) as AsVoxel>::Data;
             type Child = <($($tail),+) as AsVoxel>::Voxel;
 
@@ -153,7 +143,7 @@ macro_rules! define_chain {
                     detail: Arc::new(Vec::from_iter(iter.into_iter().take(Const::<Self::Data>::COUNT))),
                 }
             }
-        }
+        }*/
     };
 }
 
@@ -347,6 +337,9 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
 }
 
 impl Voxel<()> for Simple {
+    type ChildData = ();
+    type Child = Simple;
+
     fn visible(&self) -> bool {
         if let Simple::Material(_) = *self {
             true
@@ -387,9 +380,20 @@ impl Voxel<()> for Simple {
             Simple::Material(_) => true,
         }
     }
+
+    fn child(&self, _: usize) -> Option<&Self::Child> {
+        None
+    }
+
+    fn from_iter<I: IntoIterator<Item=Self::Child>>(_: (), _: I) -> Self {
+        Simple::Empty
+    }
 }
 
 impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, V> {
+    type ChildData = U;
+    type Child = V;
+
     fn visible(&self) -> bool {
         match *self {
             Nested::Empty { .. } => false,
@@ -445,6 +449,25 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, 
 
         self.hit_detect(transform, origin, direction)
             .is_some()
+    }
+
+    fn child(&self, index: usize) -> Option<&Self::Child> {
+        match *self {
+            Nested::Empty { .. } |
+            Nested::Material { .. } => None,
+            Nested::Detail { ref detail, .. } => if index < Const::<T>::COUNT {
+                Some(&detail[index])
+            } else {
+                None
+            },
+        }
+    }
+
+    fn from_iter<I: IntoIterator<Item=V>>(data: T, iter: I) -> Self {
+        Nested::Detail {
+            data,
+            detail: Arc::new(Vec::from_iter(iter.into_iter()))
+        }
     }
 }
 
