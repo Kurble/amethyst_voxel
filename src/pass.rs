@@ -1,4 +1,4 @@
-use std::mem::replace;
+
 use amethyst::renderer::{
     batch::{GroupIterator, TwoLevelBatch},
     pipeline::{PipelineDescBuilder, PipelinesBuilder},
@@ -211,7 +211,9 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                     };
 
                     if mesh.dirty {
-                        let new_mesh = build_mesh(&mesh, (), Pos::new(0.0, 0.0, 0.0), 16.0, &materials, queue, factory);
+                        let pos = Pos::new(0.0, 0.0, 0.0);
+                        let scale = 16.0;
+                        let new_mesh = build_mesh(&mesh, (), pos, scale, &materials, queue, factory);
 
                         if id == meshes_ref.len() {
                             meshes_ref.push(new_mesh);
@@ -237,7 +239,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                 .join()
                 .flat_map(|world| {
                     for i in 0..world.data.len() {
-                        let build_id = if let Some(chunk) = world.data[i].get_mut() {
+                        let build_id = if let Some(chunk) = world.get_ready_chunk(i) {
                             if chunk.dirty {
                                 chunk.mesh = match chunk.mesh {
                                     Some(id) => Some(id),
@@ -371,23 +373,14 @@ fn build_mesh<'a, B, V, C>(
     let ao = AmbientOcclusion::build(&voxel.data, &context);
 
     let crate::triangulate::Mesh {
-        pos,
-        nml,
-        tan,
-        tex,
-        ind,
-    } = crate::triangulate::Mesh::build::<V>(&voxel.data, &ao, pos, scale);
+        pos, nml, tan, tex, ind,
+    } = crate::triangulate::Mesh::build::<V, C>(&voxel.data, &ao, &context, pos, scale);
 
     let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| materials.coord(mat, ao)).collect();
 
     B::wrap_mesh(MeshBuilder::new()
-        .with_indices(ind)
-        .with_vertices(pos)
-        .with_vertices(nml)
-        .with_vertices(tan)
-        .with_vertices(tex)
-        .build(queue, factory)
-        .unwrap())
+        .with_vertices(pos).with_vertices(nml).with_vertices(tan).with_vertices(tex)
+        .with_indices(ind).build(queue, factory).unwrap())
 }
 
 #[allow(clippy::too_many_arguments)]

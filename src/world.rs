@@ -6,13 +6,6 @@ use crate::{
 use futures::{Future, Async};
 use std::mem::replace;
 use std::error::Error;
-use std::iter::empty;
-
-use rendy::{
-    command::QueueId,
-    factory::Factory,
-};
-use amethyst::renderer::types::Backend;
 
 pub struct MutableVoxelWorld<V: AsVoxel> {
     source: Box<dyn Source<V>+Send+Sync>,
@@ -28,6 +21,8 @@ pub type VoxelFuture<V> = Box<dyn Future<Item=<V as AsVoxel>::Voxel, Error=Box<d
 pub trait Source<V: AsVoxel> {
     /// Load chunk at the specified chunk coordinate
     fn load(&mut self, coord: [isize; 3]) -> VoxelFuture<V>;
+
+    fn is_limit(&self, axis: usize, coord: isize) -> bool;
 }
 
 pub(crate) enum Chunk<V: AsVoxel> {
@@ -104,6 +99,43 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
         self.origin = origin;
     }
 
+    pub(crate) fn get_ready_chunk(&mut self, index: usize) -> Option<&mut MutableVoxel<V>> {
+        if self.data[index].get_mut().map(|c| c.dirty).unwrap_or(false) {
+            let coord = [
+                index % self.dims[0],
+                (index / self.dims[0]) % self.dims[1],
+                index / (self.dims[0] * self.dims[1]),
+            ];
+            let offset = [
+                1, 
+                self.dims[0], 
+                self.dims[0]*self.dims[1]
+            ];
+
+            let available = coord.iter().enumerate().fold(true, |available, (i, &x)| {
+                if x == 0 { 
+                    available && self.source.is_limit(i, self.origin[i]) 
+                } else if x == self.dims[i]-1 { 
+                    available && self.source.is_limit(i, self.origin[i] + self.dims[i] as isize - 1) 
+                } else if self.data[index - offset[i]].get_mut().is_none() {
+                    false
+                } else if self.data[index + offset[i]].get_mut().is_none() {
+                    false
+                } else {
+                    available
+                }
+            });
+
+            if available {
+                self.data[index].get_mut()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn focus<'a>(&'a self, chunk: [isize;3]) -> impl Context + 'a {
         Focus(chunk, self)
     }
@@ -119,17 +151,27 @@ impl<V: AsVoxel> Chunk<V> {
     }
 
     pub fn get_mut(&mut self) -> Option<&mut MutableVoxel<V>> {
-        *self = match replace(self, Chunk::NotNeeded) {
-            Chunk::NotReady(mut fut) => match fut.poll() {
-                Ok(Async::Ready(voxel)) => Chunk::Ready(MutableVoxel::new(voxel)),
-                Ok(Async::NotReady) => Chunk::NotReady(fut),
-                Err(e) => panic!("{}", e),
-            },
-            other => other,
-        };
         match *self {
             Chunk::NotNeeded => None,
-            Chunk::NotReady(_) => None,
+            Chunk::NotReady(ref mut fut) => {
+                match fut.poll() {
+                    Ok(Async::Ready(voxel)) => {
+                        *self = Chunk::Ready(MutableVoxel::new(voxel));
+                        match *self {
+                            Chunk::Ready(ref mut voxel) => Some(voxel),
+                            _ => unreachable!(),
+                        }
+                    },
+                    Ok(Async::NotReady) => {
+                        None
+                    },
+                    Err(e) => {
+                        println!("Chunk failed to load: {}", e);
+                        *self = Chunk::NotNeeded;
+                        None
+                    },
+                }
+            },
             Chunk::Ready(ref mut voxel) => Some(voxel),
         }
     }

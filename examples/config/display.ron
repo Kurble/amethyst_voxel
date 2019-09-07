@@ -1,4 +1,4 @@
 (
     title: "Hello Voxel",
-    dimensions: Some((512, 288)),
+    dimensions: Some((1920, 1080)),
 )

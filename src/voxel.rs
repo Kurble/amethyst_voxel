@@ -44,10 +44,10 @@ pub trait Voxel<T: VoxelData>: 'static + Clone + Send + Sync {
     fn render(&self) -> bool;
 
     /// Triangulate this voxel to the mesh.
-    fn triangulate_self<S: Side<T>>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, origin: Pos, scale: f32);
+    fn triangulate_self<S: Side<T>, C: Context>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, context: &C, origin: Pos, scale: f32);
 
     /// Triangulate this voxel to the mesh.
-    fn triangulate_all(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, origin: Pos, scale: f32);
+    fn triangulate_all<C: Context>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, context: &C, origin: Pos, scale: f32);
 
     /// Perform hitdetect on this voxel. Returns whether the voxel was hit.
     fn hit(&self, transform: Mat4, origin: Vec3, direction: Vec3) -> bool;
@@ -356,13 +356,13 @@ impl Voxel<()> for Simple {
         }
     }
 
-    fn triangulate_self<S: Side<()>>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, origin: Pos, scale: f32) {
+    fn triangulate_self<S: Side<()>, C: Context>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, _: &C, origin: Pos, scale: f32) {
         if let Simple::Material(material) = *self {
             triangulate_face::<(), S>(mesh, ao, origin, scale, material);
         }
     }
 
-    fn triangulate_all(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, origin: Pos, scale: f32) {
+    fn triangulate_all<C: Context>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, _: &C, origin: Pos, scale: f32) {
         if let Simple::Material(material) = *self {
             triangulate_face::<(), Left>(mesh, ao, origin, scale, material);
             triangulate_face::<(), Right>(mesh, ao, origin, scale, material);
@@ -410,18 +410,18 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, 
         }
     }
 
-    fn triangulate_self<S: Side<T>>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, origin: Pos, scale: f32) {
+    fn triangulate_self<S: Side<T>, C: Context>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, context: &C, origin: Pos, scale: f32) {
         match *self {
             Nested::Empty { .. } =>
                 (),
 
             Nested::Detail { ref detail, .. } => match S::SIDE {
-                0 => triangulate_detail::<T,U,V,S,Right>(mesh, ao, origin, scale, detail.as_slice()),
-                1 => triangulate_detail::<T,U,V,S,Left>(mesh, ao, origin, scale, detail.as_slice()),
-                2 => triangulate_detail::<T,U,V,S,Above>(mesh, ao, origin, scale, detail.as_slice()),
-                3 => triangulate_detail::<T,U,V,S,Below>(mesh, ao, origin, scale, detail.as_slice()),
-                4 => triangulate_detail::<T,U,V,S,Front>(mesh, ao, origin, scale, detail.as_slice()),
-                5 => triangulate_detail::<T,U,V,S,Back>(mesh, ao, origin, scale, detail.as_slice()),
+                0 => triangulate_detail::<T,U,V,S,Right,C>(mesh, ao, context, origin, scale, detail.as_slice()),
+                1 => triangulate_detail::<T,U,V,S,Left,C>(mesh, ao, context, origin, scale, detail.as_slice()),
+                2 => triangulate_detail::<T,U,V,S,Above,C>(mesh, ao, context, origin, scale, detail.as_slice()),
+                3 => triangulate_detail::<T,U,V,S,Below,C>(mesh, ao, context, origin, scale, detail.as_slice()),
+                4 => triangulate_detail::<T,U,V,S,Front,C>(mesh, ao, context, origin, scale, detail.as_slice()),
+                5 => triangulate_detail::<T,U,V,S,Back,C>(mesh, ao, context, origin, scale, detail.as_slice()),
                 _ => panic!(),
             },
 
@@ -430,13 +430,13 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, 
         }
     }
 
-    fn triangulate_all(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, origin: Pos, scale: f32) {
-        self.triangulate_self::<Left>(mesh, ao, origin, scale);
-        self.triangulate_self::<Right>(mesh, ao, origin, scale);
-        self.triangulate_self::<Below>(mesh, ao, origin, scale);
-        self.triangulate_self::<Above>(mesh, ao, origin, scale);
-        self.triangulate_self::<Back>(mesh, ao, origin, scale);
-        self.triangulate_self::<Front>(mesh, ao, origin, scale);
+    fn triangulate_all<C: Context>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, context: &C, origin: Pos, scale: f32) {
+        self.triangulate_self::<Left,C>(mesh, ao, context, origin, scale);
+        self.triangulate_self::<Right,C>(mesh, ao, context, origin, scale);
+        self.triangulate_self::<Below,C>(mesh, ao, context, origin, scale);
+        self.triangulate_self::<Above,C>(mesh, ao, context, origin, scale);
+        self.triangulate_self::<Back,C>(mesh, ao, context, origin, scale);
+        self.triangulate_self::<Front,C>(mesh, ao, context, origin, scale);
     }
 
     fn hit(&self, transform: Mat4, origin: Vec3, direction: Vec3) -> bool {

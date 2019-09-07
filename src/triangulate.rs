@@ -37,7 +37,7 @@ impl<T: VoxelData> Const<T> {
 
 impl Mesh {
     /// Create a new mesh
-    pub fn build<V: AsVoxel>(root: &V::Voxel, ao: &AmbientOcclusion, origin: Pos, scale: f32) -> Self {
+    pub fn build<V: AsVoxel, C: Context>(root: &V::Voxel, ao: &AmbientOcclusion, context: &C, origin: Pos, scale: f32) -> Self {
         let mut result = Self { 
             pos: Vec::new(), 
             nml: Vec::new(),
@@ -45,7 +45,7 @@ impl Mesh {
             tex: Vec::new(),
             ind: Vec::new(),
         };
-        root.triangulate_all(&mut result, ao, origin, scale);
+        root.triangulate_all(&mut result, ao, context, origin, scale);
         result
     }
 }
@@ -56,13 +56,14 @@ fn convert3(v: Vec3) -> [f32; 3] { [v[0], v[1], v[2]] }
 #[inline]
 fn convert4(v: Vec3) -> [f32; 4] { [v[0], v[1], v[2], 1.0] }
 
-pub fn triangulate_detail<'a, T, U, V, S, Q>(mesh: &mut Mesh, ao: &'a AmbientOcclusion<'a>, origin: Pos, scale: f32, sub: &[V])
+pub fn triangulate_detail<'a, T, U, V, S, Q, C>(mesh: &mut Mesh, ao: &'a AmbientOcclusion<'a>, context: &C, origin: Pos, scale: f32, sub: &[V])
     where
         T: VoxelData,
         U: VoxelData,
         V: Voxel<U>,
         S: Side<T>,
         Q: Side<U>,
+        C: Context,
 {
     // the scale of a single sub-voxel
     let scale = scale * Const::<T>::SCALE;
@@ -74,7 +75,10 @@ pub fn triangulate_detail<'a, T, U, V, S, Q>(mesh: &mut Mesh, ao: &'a AmbientOcc
             let z = (i >> (T::SUBDIV * 2)) & Const::<T>::LAST;
             let j = (i as isize + S::OFFSET) as usize;
 
-            if (S::accept(x, y, z) && sub[j].render()) || sub[i].render() || !S::accept(x, y, z) {
+            if sub[i].render() || 
+                (S::accept(x, y, z) && sub[j].render()) || 
+                context.render(x as isize + S::DX, y as isize + S::DY, z as isize + S::DZ) 
+            {
                 let src = Pos {
                     x: origin.x + x as f32 * scale,
                     y: origin.y + y as f32 * scale,
@@ -82,7 +86,7 @@ pub fn triangulate_detail<'a, T, U, V, S, Q>(mesh: &mut Mesh, ao: &'a AmbientOcc
                 };
 
                 // add the visible face
-                sub[i].triangulate_self::<Q>(mesh, &ao.sub(x, y, z), src, scale);
+                sub[i].triangulate_self::<Q, C>(mesh, &ao.sub(x, y, z), context, src, scale);
             }
         }
     }

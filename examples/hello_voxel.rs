@@ -63,6 +63,14 @@ impl Source<ExampleVoxel> for FlatLoader {
 
         Box::new(futures::future::ok(chunk))
     }
+
+    fn is_limit(&self, axis: usize, coord: isize) -> bool {
+        if axis == 1 {
+            coord == 0
+        } else {
+            false
+        }
+    }
 }
 
 impl SimpleState for Example {
@@ -103,7 +111,7 @@ impl SimpleState for Example {
 
         let loader = Box::new(FlatLoader { materials });
 
-        let mut world = MutableVoxelWorld::<ExampleVoxel>::new(loader, [4, 1, 4], 16.0);
+        let mut world = MutableVoxelWorld::<ExampleVoxel>::new(loader, [14, 1, 14], 16.0);
 
         world.load([0.0, 0.0, 0.0], 64.0);
 

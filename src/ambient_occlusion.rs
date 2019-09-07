@@ -94,7 +94,7 @@ impl AmbientOcclusion<'_> {
     }
 
     pub(crate) fn quad<T: VoxelData, S: Side<T>>(&self) -> [f32; 4] {
-        let f = |d: u16, s: u16| 1.0 - f32::from((d >> s) & 0x03) / 4.0;
+        let f = |d: u16, s: u16| 1.0 - f32::from((d >> s) & 0x03) / 3.0;
         match *self {
             AmbientOcclusion::Small{ ao } => {
                 match S::SIDE {
