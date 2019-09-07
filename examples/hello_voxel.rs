@@ -5,7 +5,7 @@ use amethyst::{
         //shrev::{EventChannel, ReaderId},
         transform::{TransformBundle, Transform},
     },
-    controls::{ArcBallControlBundle},
+    controls::{FlyControlBundle},
 	renderer::{
 		palette::{Srgb},
 	    plugins::{RenderToWindow, RenderShaded3D, RenderSkybox},
@@ -79,7 +79,7 @@ impl SimpleState for Example {
         data.world.register::<MutableVoxelWorld<ExampleVoxel>>();
 
         let prefab_handle = data.world.exec(|loader: PrefabLoader<'_, MyPrefabData>| {
-            loader.load("prefab/arc_ball_camera.ron", RonFormat, ())
+            loader.load("prefab/hello_voxel.ron", RonFormat, ())
         });
         data.world.create_entity().with(prefab_handle).build();
 
@@ -152,12 +152,21 @@ fn main() -> amethyst::Result<()> {
 
     let game_data = GameDataBuilder::default()
     	.with(PrefabLoaderSystem::<MyPrefabData>::default(), "", &[])
-    	.with_bundle(TransformBundle::new().with_dep(&[]))?
+        .with_bundle(
+            FlyControlBundle::<StringBindings>::new(
+                Some(String::from("move_x")),
+                Some(String::from("move_y")),
+                Some(String::from("move_z")),
+            )
+            .with_sensitivity(0.1, 0.1)
+            .with_speed(5.0),
+        )?
+    	.with_bundle(TransformBundle::new().with_dep(&["fly_movement"]))?
     	.with_bundle(
             InputBundle::<StringBindings>::new()
                 .with_bindings_from_file(&key_bindings_path)?,
         )?
-        .with_bundle(ArcBallControlBundle::<StringBindings>::new())?
+        
     	.with_bundle(VoxelBundle::<ExampleVoxel>::new())?
     	.with_bundle(
         	RenderingBundle::<DefaultBackend>::new()
@@ -165,12 +174,11 @@ fn main() -> amethyst::Result<()> {
 	                RenderToWindow::from_config_path(display_config_path)
 	                    .with_clear([0.0, 0.0, 0.0, 1.0]),
 	            )
-	            .with_plugin(RenderShaded3D::default())
-	            .with_plugin(RenderSkybox::with_colors(
+	            .with_plugin(RenderVoxelPbr::<ExampleVoxel>::default())
+                .with_plugin(RenderSkybox::with_colors(
                     Srgb::new(0.82, 0.51, 0.50),
                     Srgb::new(0.18, 0.11, 0.85),
-                ))
-	            .with_plugin(RenderVoxelPbr::<ExampleVoxel>::default()),
+                )),
     	)?;
 
     let mut game = Application::build(assets_directory, Example)?

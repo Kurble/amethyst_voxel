@@ -207,12 +207,18 @@ impl<'a, V: AsVoxel> Focus<'a, V> {
 }
 
 impl<'a, V: AsVoxel> Context for Focus<'a, V> {
+    type Child = ();
+
     fn visible(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|c| c.visible()).unwrap_or(false)
     }
 
     fn render(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|c| c.render()).unwrap_or(false)
+    }
+
+    fn child(&self, _index: usize) -> Self::Child {
+        // todo
     }
 }
 

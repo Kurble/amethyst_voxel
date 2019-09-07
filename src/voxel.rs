@@ -67,11 +67,16 @@ pub trait AsVoxel: Send + Sync {
 
 /// Trait for retrieving neighbour information between separate root voxels.
 pub trait Context {
+    type Child: Context;
+
     /// Same as Voxel::visible, but accepts a relative coordinate for selecting a child voxel.
     fn visible(&self, x: isize, y: isize, z: isize) -> bool;
 
     /// Same as Voxel::render, but accepts a relative coordinate for selecting a child voxel.
     fn render(&self, x: isize, y: isize, z: isize) -> bool;
+
+    /// Sub
+    fn child(&self, index: usize) -> Self::Child;
 }
 
 /// A single voxel with nothing special.
@@ -117,9 +122,13 @@ impl VoxelData for () {
 }
 
 impl Context for () {
+    type Child = ();
+
     fn visible(&self, _: isize, _: isize, _: isize) -> bool { false }
 
     fn render(&self, _: isize, _: isize, _: isize) -> bool { false }
+
+    fn child(&self, _: usize) -> Self::Child { }
 }
 
 impl<T: VoxelData> AsVoxel for T {
@@ -133,17 +142,6 @@ macro_rules! define_chain {
             type Data = $head;
             type Voxel = Nested<$head, <($($tail),+) as AsVoxel>::Data, <($($tail),+) as AsVoxel>::Voxel>;
         }
-        /*impl<$head: VoxelData, $($tail: VoxelData),+> AsNestedVoxel for ($head, $($tail),+) where ($($tail),+): AsVoxel {
-            type ChildData = <($($tail),+) as AsVoxel>::Data;
-            type Child = <($($tail),+) as AsVoxel>::Voxel;
-
-            fn from_iter<I: IntoIterator<Item=Self::Child>>(data: Self::Data, iter: I) -> Self::Voxel {
-                Nested::Detail {
-                    data,
-                    detail: Arc::new(Vec::from_iter(iter.into_iter().take(Const::<Self::Data>::COUNT))),
-                }
-            }
-        }*/
     };
 }
 
@@ -156,6 +154,7 @@ define_chain!(A, B, C, D, E, F, G);
 define_chain!(A, B, C, D, E, F, G, H);
 
 impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
+    /// Construct a new, empty voxel. The voxel will have no content at all.
     pub fn new(data: T) -> Self {
         Nested::Empty {
             data,
@@ -163,6 +162,7 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
         }
     }
 
+    /// Construct a Nested::Detail from an iterator.
     pub fn from_iter<I>(data: T, iter: I) -> Self where
         I: IntoIterator<Item = V>
     {
@@ -172,6 +172,7 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
         }
     }
 
+    /// Construct a Nested::Material voxel. The voxel will be filled with one single material.
     pub fn filled(data: T, material: VoxelMaterialId) -> Self {
         Nested::Material {
             data,
@@ -179,6 +180,13 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
         }
     }
 
+    /// Perform a hit detect on the voxel. If a voxel was hit, a tuple will be returned, containing:
+    /// - the index of the subvoxel that was hit
+    /// - a transformation representing the hit voxel
+    /// Arguments:
+    /// vox_to_world - the voxel to world matrix
+    /// origin - the origin of the ray
+    /// direction - the direction of the ray
     pub fn hit_detect(&self,
                       vox_to_world: Mat4,
                       origin: Vec3,

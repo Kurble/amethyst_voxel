@@ -36,14 +36,17 @@ Prefab (
         ),
         (
             data: (
-                transform: (),
+                transform: (
+                    translation: (0.0, 6.5, 0.0),
+                    rotation: (-0.13, 0.0, 0.0, 0.99)
+                ),
                 camera: Perspective(
                     aspect: 1.77777,
                     fovy: 1.0471975512,
                     znear: 0.1,
                     zfar: 2000.0,
                 ),
-                control_tag: (arc_ball: (1, 18.),),
+                control_tag: (),
             ),
         ),
     ],

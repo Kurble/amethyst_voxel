@@ -79,6 +79,8 @@ pub fn triangulate_detail<'a, T, U, V, S, Q, C>(mesh: &mut Mesh, ao: &'a Ambient
                 (S::accept(x, y, z) && sub[j].render()) || 
                 context.render(x as isize + S::DX, y as isize + S::DY, z as isize + S::DZ) 
             {
+                let ao = &ao.sub(x, y, z);
+                let ctx = &context.child(i);
                 let src = Pos {
                     x: origin.x + x as f32 * scale,
                     y: origin.y + y as f32 * scale,
@@ -86,7 +88,7 @@ pub fn triangulate_detail<'a, T, U, V, S, Q, C>(mesh: &mut Mesh, ao: &'a Ambient
                 };
 
                 // add the visible face
-                sub[i].triangulate_self::<Q, C>(mesh, &ao.sub(x, y, z), context, src, scale);
+                sub[i].triangulate_self::<Q, C::Child>(mesh, ao, ctx, src, scale);
             }
         }
     }
