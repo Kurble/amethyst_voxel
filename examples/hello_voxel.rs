@@ -103,7 +103,7 @@ impl SimpleState for Example {
 
         let loader = Box::new(FlatLoader { materials });
 
-        let mut world = MutableVoxelWorld::<ExampleVoxel>::new(loader, [4, 4, 1], 16.0);
+        let mut world = MutableVoxelWorld::<ExampleVoxel>::new(loader, [4, 1, 4], 16.0);
 
         world.load([0.0, 0.0, 0.0], 64.0);
 

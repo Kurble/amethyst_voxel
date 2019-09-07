@@ -30,10 +30,12 @@ use rendy::{
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use crate::{
-    voxel::AsVoxel,
+    voxel::{AsVoxel, Context},
+    world::Chunk,
     coordinate::Pos,
     material::VoxelMaterialStorage,
     ambient_occlusion::*,
+    MutableVoxelWorld,
     MutableVoxel,
 };
 
@@ -177,12 +179,13 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
         let (
             //visibility,
             mut meshes,
+            mut worlds,
             materials,
             transforms,
             tints,
         ) = <(
-            //ReadExpect<'_, Visibility>,
             WriteStorage<'_, MutableVoxel<V>>,
+            WriteStorage<'_, MutableVoxelWorld<V>>,
             Read<'_, VoxelMaterialStorage>,
             ReadStorage<'_, Transform>,
             ReadStorage<'_, Tint>,
@@ -208,32 +211,12 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                     };
 
                     if mesh.dirty {
-                        let ao = AmbientOcclusion::build(&mesh.data, &());
-
-                        let crate::triangulate::Mesh {
-                            pos,
-                            nml,
-                            tan,
-                            tex,
-                            ind,
-                        } = crate::triangulate::Mesh::build::<V>(&mesh.data, &ao, Pos::new(0.0, 0.0, 0.0), 16.0);
-
-                        let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| materials.coord(mat, ao)).collect();
-
-                        let new_mesh = B::wrap_mesh(MeshBuilder::new()
-                            .with_indices(ind)
-                            .with_vertices(pos)
-                            .with_vertices(nml)
-                            .with_vertices(tan)
-                            .with_vertices(tex)
-                            .build(queue, factory)
-                            .unwrap());
+                        let new_mesh = build_mesh(&mesh, (), Pos::new(0.0, 0.0, 0.0), 16.0, &materials, queue, factory);
 
                         if id == meshes_ref.len() {
                             meshes_ref.push(new_mesh);
                         } else {
-                            let _old_mesh = replace(&mut meshes_ref[id], new_mesh);
-                            // todo: find out how to destroy the old mesh
+                            meshes_ref[id] = new_mesh;
                         }
 
                         mesh.mesh = Some(id);
@@ -242,6 +225,59 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
 
                     mesh.mesh.map(|id| {
                         ((mat, id), VertexArgs::from_object_data(tform, tint))
+                    })
+                })
+                .for_each_group(|(mat, id), data| {
+                    if let Some((mat, _)) = materials_ref.insert(factory, resources, mat) {
+                        statics_ref.insert(mat, id, data.drain(..));
+                    }
+                });
+
+            (&mut worlds)
+                .join()
+                .flat_map(|world| {
+                    for i in 0..world.data.len() {
+                        let build_id = if let Some(chunk) = world.data[i].get_mut() {
+                            if chunk.dirty {
+                                chunk.mesh = match chunk.mesh {
+                                    Some(id) => Some(id),
+                                    None => Some(meshes_ref.len())
+                                };
+                                chunk.dirty = false;
+                                chunk.mesh
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        if let Some(id) = build_id {
+                            let x = ((i) % world.dims[0]) as isize;
+                            let y = ((i / (world.dims[0])) % world.dims[1]) as isize;
+                            let z = ((i / (world.dims[0]*world.dims[1])) % world.dims[2]) as isize;
+                            let scale = world.scale;
+                            let pos = Pos::new(
+                                (x + world.origin[0]) as f32 * scale, 
+                                (y + world.origin[1]) as f32 * scale, 
+                                (z + world.origin[2]) as f32 * scale
+                            );
+                            let chunk = world.data[i].get().unwrap();
+                            let focus = world.focus([x,y,z]);
+                            let new_mesh = build_mesh(chunk, focus, pos, scale, &materials, queue, factory);
+                            if id == meshes_ref.len() {
+                                meshes_ref.push(new_mesh);
+                            } else {
+                                meshes_ref[id] = new_mesh;
+                            }
+                        }
+                    }
+
+                    world.data.iter().filter_map(|chunk| match chunk {
+                        Chunk::Ready(chunk) => chunk.mesh.map(|id| {
+                            ((mat, id), VertexArgs::from_object_data(&Transform::default(), None))
+                        }),
+                        _ => None,
                     })
                 })
                 .for_each_group(|(mat, id), data| {
@@ -316,6 +352,42 @@ lazy_static::lazy_static! {
         pso::ShaderStageFlags::VERTEX,
         "main",
     );
+}
+
+fn build_mesh<'a, B, V, C>(
+    voxel: &MutableVoxel<V>, 
+    context: C, 
+    pos: Pos, 
+    scale: f32, 
+    materials: &VoxelMaterialStorage,
+    queue: QueueId, 
+    factory: &Factory<B>
+) -> Mesh where
+    B: Backend, 
+    V: AsVoxel, 
+    C: Context,
+    AmbientOcclusion<'a>: BuildAmbientOcclusion<'a, <V as AsVoxel>::Data, <V as AsVoxel>::Voxel>
+{
+    let ao = AmbientOcclusion::build(&voxel.data, &context);
+
+    let crate::triangulate::Mesh {
+        pos,
+        nml,
+        tan,
+        tex,
+        ind,
+    } = crate::triangulate::Mesh::build::<V>(&voxel.data, &ao, pos, scale);
+
+    let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| materials.coord(mat, ao)).collect();
+
+    B::wrap_mesh(MeshBuilder::new()
+        .with_indices(ind)
+        .with_vertices(pos)
+        .with_vertices(nml)
+        .with_vertices(tan)
+        .with_vertices(tex)
+        .build(queue, factory)
+        .unwrap())
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -6,13 +6,20 @@ use crate::{
 use futures::{Future, Async};
 use std::mem::replace;
 use std::error::Error;
+use std::iter::empty;
+
+use rendy::{
+    command::QueueId,
+    factory::Factory,
+};
+use amethyst::renderer::types::Backend;
 
 pub struct MutableVoxelWorld<V: AsVoxel> {
     source: Box<dyn Source<V>+Send+Sync>,
-    data: Vec<Chunk<V>>,
-    dims: [usize; 3],
-    origin: [isize; 3],
-    scale: f32,
+    pub(crate) data: Vec<Chunk<V>>,
+    pub(crate) dims: [usize; 3],
+    pub(crate) origin: [isize; 3],
+    pub(crate) scale: f32,
 }
 
 pub type VoxelFuture<V> = Box<dyn Future<Item=<V as AsVoxel>::Voxel, Error=Box<dyn Error+Send+Sync>>+Send+Sync>;
@@ -23,7 +30,7 @@ pub trait Source<V: AsVoxel> {
     fn load(&mut self, coord: [isize; 3]) -> VoxelFuture<V>;
 }
 
-enum Chunk<V: AsVoxel> {
+pub(crate) enum Chunk<V: AsVoxel> {
     NotNeeded,
     NotReady(VoxelFuture<V>),
     Ready(MutableVoxel<V>),
@@ -96,6 +103,10 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
 
         self.origin = origin;
     }
+
+    pub(crate) fn focus<'a>(&'a self, chunk: [isize;3]) -> impl Context + 'a {
+        Focus(chunk, self)
+    }
 }
 
 impl<V: AsVoxel> Chunk<V> {
@@ -124,7 +135,7 @@ impl<V: AsVoxel> Chunk<V> {
     }
 }
 
-struct Focus<'a, V: AsVoxel>([isize; 3], &'a mut MutableVoxelWorld<V>);
+struct Focus<'a, V: AsVoxel>([isize; 3], &'a MutableVoxelWorld<V>);
 
 impl<'a, V: AsVoxel> Focus<'a, V> {
     fn find(&self, x: isize, y: isize, z: isize) -> Option<&<V::Voxel as Voxel<V::Data>>::Child> {
