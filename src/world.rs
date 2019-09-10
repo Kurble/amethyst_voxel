@@ -7,6 +7,7 @@ use crate::{
 use futures::{Future, Async};
 use std::mem::replace;
 use std::error::Error;
+use amethyst::ecs::World;
 
 pub struct MutableVoxelWorld<V: AsVoxel> {
     source: Box<dyn Source<V>+Send+Sync>,
@@ -115,7 +116,8 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
                     self.data[index] = match moved_chunk {
                         Chunk::NotNeeded => {
                             // todo: *check* if the chunk needs to be loaded
-                            Chunk::NotReady(self.source.load([x+origin[0], y+origin[1], z+origin[2]]))
+                            let coord = [x+origin[0], y+origin[1], z+origin[2]];
+                            Chunk::NotReady(self.source.load(coord))
                         },
                         chunk => chunk,
                     };

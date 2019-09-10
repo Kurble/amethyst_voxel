@@ -20,6 +20,7 @@ use amethyst::{
 	},
 	input::{VirtualKeyCode, InputBundle, StringBindings, is_key_down},
 	utils::{scene::BasicScenePrefab},
+    ecs::Resources,
 };
 use amethyst_voxel::*;
 use rand::Rng;
@@ -27,7 +28,7 @@ use std::iter::repeat_with;
 
 type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>), f32>;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ExampleVoxel;
 
 impl VoxelData for ExampleVoxel {
@@ -36,12 +37,24 @@ impl VoxelData for ExampleVoxel {
 
 struct Example;
 
+/*
 struct FlatLoader {
     materials: Vec<VoxelMaterialId>,
 }
 
 impl Source<ExampleVoxel> for FlatLoader {
-    fn load(&mut self, _coord: [isize; 3]) -> VoxelFuture<ExampleVoxel> {
+    fn limits(&self) -> Limits {
+        Limits { 
+            from: [None, Some(0), None], 
+            to: [None, Some(0), None],
+        }
+    }
+
+    fn ready(&self, _: &Resources) -> bool { 
+        true
+    }
+
+    fn load(&mut self, _: &Resources, _coord: [isize; 3]) -> VoxelFuture<ExampleVoxel> {
         let mut rng = rand::thread_rng();
 
         let materials_ref = &self.materials;
@@ -49,9 +62,9 @@ impl Source<ExampleVoxel> for FlatLoader {
         let chunk = Nested::Detail {
             data: ExampleVoxel,
             detail: std::sync::Arc::new((0..16)
-                .flat_map(|z| (0..16)
+                .flat_map(|_| (0..16)
                     .flat_map(move |y| (0..16)
-                        .map(move |x| {
+                        .map(move |_| {
                             let limit = 5 + rng.gen_range(0, 3);
                             if y < limit || (y == limit && 16u8 > rand::random()) {
                                 Simple::Material(materials_ref[rng.gen_range(0, 4)])
@@ -63,7 +76,7 @@ impl Source<ExampleVoxel> for FlatLoader {
 
         Box::new(futures::future::ok(chunk))
     }
-}
+}*/
 
 impl SimpleState for Example {
     fn on_start(&mut self, data: StateData<GameData>) {
@@ -77,7 +90,7 @@ impl SimpleState for Example {
 
         let mut rng = rand::thread_rng();
 
-        let materials: Vec<_> = {
+        /*let materials: Vec<_> = {
             let mut materials = data.world.write_resource::<VoxelMaterialStorage>();
             repeat_with(|| materials.create(VoxelMaterial {
                 albedo: [128 + rng.gen_range(0, 128), rng.gen(), rng.gen()],
@@ -88,16 +101,19 @@ impl SimpleState for Example {
             })).take(4).collect()
         };
 
-        let loader = Box::new(FlatLoader { materials });
+        let loader = Box::new(FlatLoader { materials });*/
 
-        let limits = Limits { 
-            from: [None, Some(0), None], 
-            to: [None, Some(0), None],
+        let model_handle = {
+            let loader = &data.world.read_resource::<amethyst::assets::Loader>();
+            loader.load(
+                "vox/monu9.vox",
+                VoxFormat,
+                (),
+                &data.world.read_resource::<amethyst::assets::AssetStorage<VoxelModel>>(),
+            )
         };
 
-        let mut world = MutableVoxelWorld::<ExampleVoxel>::new(loader, limits, [14, 1, 14], 16.0);
-
-        world.load([0.0, 0.0, 0.0], 64.0);
+        let world = MutableVoxelWorld::<ExampleVoxel>::new(Box::new(model_handle), [14, 1, 14], 16.0);
 
         data.world
             .create_entity()

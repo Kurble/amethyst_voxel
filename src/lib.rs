@@ -29,6 +29,8 @@ pub type RenderVoxelPbr<V> = plugin::RenderVoxel<pass::VoxelPassDef<amethyst::re
 pub struct MutableVoxel<V: AsVoxel> {
 	pub(crate) data: V::Voxel,
 	pub(crate) dirty: bool,
+
+	// todo: the associated mesh should be destroyed if the mutablevoxel is destroyed
 	pub(crate) mesh: Option<usize>,
 }
 
