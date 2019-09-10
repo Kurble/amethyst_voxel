@@ -1,5 +1,6 @@
 use crate::{
     voxel::*,
+    context::*,
     triangulate::Const,
     MutableVoxel,
 };
@@ -9,6 +10,7 @@ use std::error::Error;
 
 pub struct MutableVoxelWorld<V: AsVoxel> {
     source: Box<dyn Source<V>+Send+Sync>,
+    loaded: bool,
     pub(crate) data: Vec<Chunk<V>>,
     pub(crate) dims: [usize; 3],
     pub(crate) origin: [isize; 3],
@@ -22,7 +24,13 @@ pub trait Source<V: AsVoxel> {
     /// Load chunk at the specified chunk coordinate
     fn load(&mut self, coord: [isize; 3]) -> VoxelFuture<V>;
 
-    fn is_limit(&self, axis: usize, coord: isize) -> bool;
+    /// Retrieve the limits in chunks that this source can generate
+    fn limits(&self) -> Limits;
+}
+
+pub struct Limits {
+    pub from: [Option<isize>; 3],
+    pub to: [Option<isize>; 3],
 }
 
 pub(crate) enum Chunk<V: AsVoxel> {
@@ -35,6 +43,7 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
     pub fn new(source: Box<dyn Source<V>+Send+Sync>, dims: [usize; 3], scale: f32) -> Self {
         Self {
             source,
+            loaded: false,
             data: (0..dims[0]*dims[1]*dims[2]).map(|_| Chunk::NotNeeded).collect(),
             dims,
             origin: [0, 0, 0],
@@ -43,14 +52,32 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
     }
 
     pub fn load(&mut self, center: [f32; 3], _range: f32) {
+        let limits = self.source.limits();
+
         let origin = {
-            let f = |i: usize| if center[i] < 0.0 {
-                (center[i] / self.scale).floor() as isize - (self.dims[i]/2) as isize
-            } else {
-                (center[i] / self.scale).floor() as isize - (self.dims[i]/2) as isize
+            let f = |i: usize| {
+                let origin = if center[i] < 0.0 {
+                    (center[i] / self.scale).floor() as isize - (self.dims[i]/2) as isize
+                } else {
+                    (center[i] / self.scale).floor() as isize - (self.dims[i]/2) as isize
+                };
+                origin
+                    .max(limits.from[i].unwrap_or(origin))
+                    .min(limits.to[i].unwrap_or(origin))
             };
             [f(0), f(1), f(2)]
-        };        
+        };     
+
+        if self.loaded && 
+            origin[0] == self.origin[0] && 
+            origin[1] == self.origin[1] && 
+            origin[2] == self.origin[2] 
+        {
+            return;
+        }
+
+        self.loaded = true;
+
         let offset = {
             let f = |i| origin[i] - self.origin[i];
             [f(0), f(1), f(2)]
@@ -71,11 +98,11 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
         }
 
         for_loop(dims[2], offset[2] < 0, |z| {
-            let exists = z + offset[2] > 0 && z + offset[2] < dims[2];
+            let exists = z + offset[2] >= 0 && z + offset[2] < dims[2];
             for_loop(dims[1], offset[1] < 0, |y| {
-                let exists = exists && y + offset[1] > 0 && y + offset[1] < dims[1];
+                let exists = exists && y + offset[1] >= 0 && y + offset[1] < dims[1];
                 for_loop(dims[0], offset[0] < 0, |x| {
-                    let exists = exists && x + offset[0] > 0 && x + offset[0] < dims[0];
+                    let exists = exists && x + offset[0] >= 0 && x + offset[0] < dims[0];
 
                     let moved_chunk = if exists {
                         let index = ((z+offset[2])*dims[0]*dims[1]+(y+offset[1])*dims[0]+(x+offset[0])) as usize;
@@ -111,12 +138,13 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
                 self.dims[0], 
                 self.dims[0]*self.dims[1]
             ];
+            let limits = self.source.limits();
 
             let available = coord.iter().enumerate().fold(true, |available, (i, &x)| {
                 if x == 0 { 
-                    available && self.source.is_limit(i, self.origin[i]) 
+                    available && limits.from[i].map(|x| x == self.origin[i]).unwrap_or(false)
                 } else if x == self.dims[i]-1 { 
-                    available && self.source.is_limit(i, self.origin[i] + self.dims[i] as isize - 1) 
+                    available && limits.to[i].map(|x| x == self.origin[i] + self.dims[i] as isize - 1).unwrap_or(false)
                 } else if self.data[index - offset[i]].get_mut().is_none() {
                     false
                 } else if self.data[index + offset[i]].get_mut().is_none() {
@@ -136,8 +164,8 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
         }
     }
 
-    pub(crate) fn focus<'a>(&'a self, chunk: [isize;3]) -> impl Context + 'a {
-        Focus(chunk, self)
+    pub(crate) fn context<'a>(&'a self, chunk: [isize;3]) -> impl Context + 'a {
+        WorldContext(chunk, self)
     }
 }
 
@@ -177,15 +205,21 @@ impl<V: AsVoxel> Chunk<V> {
     }
 }
 
-struct Focus<'a, V: AsVoxel>([isize; 3], &'a MutableVoxelWorld<V>);
+struct WorldContext<'a, V: AsVoxel>([isize; 3], &'a MutableVoxelWorld<V>);
 
-impl<'a, V: AsVoxel> Focus<'a, V> {
-    fn find(&self, x: isize, y: isize, z: isize) -> Option<&<V::Voxel as Voxel<V::Data>>::Child> {
-        let Focus(focus, ref world) = *self;
+impl<'a, V: AsVoxel> Clone for WorldContext<'a, V> {
+    fn clone(&self) -> Self {
+        WorldContext(self.0, self.1)
+    }
+}
+
+impl<'a, V: AsVoxel> WorldContext<'a, V> {
+    fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a <V::Voxel as Voxel<V::Data>>::Child> {
+        let Self(chunk, ref world) = *self;
 
         let size = Const::<V::Data>::WIDTH as isize;
         let grid = |x| if x >= 0 { x / size } else { (x+1) / size - 1};
-        let coord = [focus[0]+grid(x), focus[1]+grid(y), focus[2]+grid(z)];
+        let coord = [chunk[0]+grid(x), chunk[1]+grid(y), chunk[2]+grid(z)];
         
         if (0..3).fold(true, |b, i| b && coord[i] >= 0 && coord[i] < world.dims[i] as isize) {
             let index = coord[0] as usize + 
@@ -206,8 +240,8 @@ impl<'a, V: AsVoxel> Focus<'a, V> {
     }
 }
 
-impl<'a, V: AsVoxel> Context for Focus<'a, V> {
-    type Child = ();
+impl<'a, V: AsVoxel> Context for WorldContext<'a, V> {
+    type Child = DetailContext<'a, <V::Voxel as Voxel<V::Data>>::ChildData, <V::Voxel as Voxel<V::Data>>::Child, Self>;
 
     fn visible(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|c| c.visible()).unwrap_or(false)
@@ -217,8 +251,8 @@ impl<'a, V: AsVoxel> Context for Focus<'a, V> {
         self.find(x, y, z).map(|c| c.render()).unwrap_or(false)
     }
 
-    fn child(&self, _index: usize) -> Self::Child {
-        // todo
+    fn child(self, x: isize, y: isize, z: isize) -> Self::Child {
+        DetailContext::new(self.clone(), [x, y, z], self.find(x, y, z))
     }
 }
 

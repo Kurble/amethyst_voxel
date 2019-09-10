@@ -1,38 +1,31 @@
 use std::io::*;
 use std::sync::Arc;
 use byteorder::*;
+use amethyst::assets::{Format};
 use crate::{
-    voxel::*,
-    material::{VoxelMaterial, VoxelMaterialId, VoxelMaterialStorage},
-    triangulate::Const,
+    model::VoxelModelData,
+    material::{VoxelMaterial},
 };
 
 type E = LittleEndian;
 
-// assert without panicking, instead returns an error.
-fn check(b: bool) -> Result<()> {
-    if b { Ok(()) } else { Err(ErrorKind::InvalidData.into()) }
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VoxFormat;
+
+impl Format<VoxelModelData> for VoxFormat {
+    fn name(&self) -> &'static str { "MagicaVoxel" }
+
+    fn import_simple(&self, bytes: Vec<u8>) -> amethyst::Result<VoxelModelData> {
+        let val = load_vox(bytes.as_slice())
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        Ok(val)
+    }
 }
 
-// multiply a unorm value by a scalar
-fn mul_value(value: u8, scalar: f32) -> u8 {
-    ((f32::from(value) / 255.0) * scalar * 255.0) as u8
-}
-
-// check if bit is present in u32
-fn bit(field: u32, bit: u32) -> bool {
-    (field & (0x01 << bit)) > 0
-}
-
-//pub fn load_vox_from_file<T: VoxelData + Default, P: AsRef<Path>>(path: P, store: &mut VoxelMaterialStorage) -> Result<Vec<Nested<T, (), Simple>>> {
-    // todo
-//}
-
-/// load a MagicaVoxel .vox file. Since the amount of subvoxels is fixed by the voxel format,
-///  the MagicaVoxel model is centered and cropped to fit in the fixed voxel format.
-/// Any materials that don't exist in the world yet will be added.
-pub fn load_vox<T, R>(mut reader: R, store: &mut VoxelMaterialStorage) -> Result<Vec<Nested<T, (), Simple>>> where
-    T: VoxelData + Default,
+fn load_vox<R>(mut reader: R) -> Result<Vec<VoxelModelData>> where
     R: ReadBytesExt,
 {
     // Read the vox file header and check if the version is supported.
@@ -59,9 +52,9 @@ pub fn load_vox<T, R>(mut reader: R, store: &mut VoxelMaterialStorage) -> Result
     for mut chunk in main.children {
         // the size for a model
         if chunk.is("SIZE") {
-            let w = chunk.content.read_u32::<E>()? as isize;
-            let h = chunk.content.read_u32::<E>()? as isize;
-            let d = chunk.content.read_u32::<E>()? as isize;
+            let w = chunk.content.read_u32::<E>()? as usize;
+            let h = chunk.content.read_u32::<E>()? as usize;
+            let d = chunk.content.read_u32::<E>()? as usize;
             sizes.push((w, h, d));
         }
 
@@ -140,50 +133,43 @@ pub fn load_vox<T, R>(mut reader: R, store: &mut VoxelMaterialStorage) -> Result
         }
     }
 
-    // Convert materials to material id's by adding them to the world.
-    let materials: Vec<VoxelMaterialId> = materials
-        .into_iter()
-        .map(|material| store.create(material))
-        .collect();
+    let materials = Arc::<[VoxelMaterial]>::from(materials);
 
     // Convert the stored chunk data to our own voxel format.
     Ok(sizes
         .into_iter()
         .zip(voxels)
         .map(|(size, voxels)| {
-            // calculate offsets to center the model
-            let x_offset = (Const::<T>::WIDTH as isize - size.0) / 2;
-            let y_offset = (Const::<T>::WIDTH as isize - size.1) / 2;
-            let z_offset = (Const::<T>::WIDTH as isize - size.2) / 2;
-            // Next we will expand the compressed format to a vector that has one entry per
-            //  element, even if it's empty.
-            let mut expand = Vec::new();
-            expand.resize(Const::<T>::COUNT, Simple::Empty);
-            // Perform the expansion.
-            for (x, y, z, i) in voxels {
-                let material = materials[i as usize];
-                let x = (x as isize + x_offset) as usize;
-                let y = (y as isize + y_offset) as usize;
-                let z = (z as isize + z_offset) as usize;
-                let last = Const::<T>::LAST;
-                // Material 0 is empty voxel
-                if i > 0 && x <= last && y <= last && z <= last {
-                    let i =
-                        x*Const::<T>::DX+
-                        y*Const::<T>::DY+
-                        z*Const::<T>::DZ;
-                    expand[i] = Simple::Material(material);
-                }
-            }
-
-            Nested::Detail {
-                data: T::default(),
-                detail: Arc::new(expand),
+            VoxelModelData {
+                materials: materials.clone(),
+                voxels: voxels.into_iter().map(|(x, y, z, i)| {
+                    let index = x as usize + 
+                        y as usize * size.0 + 
+                        z as usize * size.0 * size.1;
+                    (index, i as usize)
+                }).collect(),
+                dimensions: [size.0, size.1, size.2],
             }
         })
         .collect())
 }
 
+// assert without panicking, instead returns an error.
+fn check(b: bool) -> Result<()> {
+    if b { Ok(()) } else { Err(ErrorKind::InvalidData.into()) }
+}
+
+// multiply a unorm value by a scalar
+fn mul_value(value: u8, scalar: f32) -> u8 {
+    ((f32::from(value) / 255.0) * scalar * 255.0) as u8
+}
+
+// check if bit is present in u32
+fn bit(field: u32, bit: u32) -> bool {
+    (field & (0x01 << bit)) > 0
+}
+
+// convert a simple r,g,b,a material to a VoxelMaterial
 fn rgba_to_material(r: u8, g: u8, b: u8, a: u8) -> VoxelMaterial {
     VoxelMaterial {
         albedo: [r, g, b],

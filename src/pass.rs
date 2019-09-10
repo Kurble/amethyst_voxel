@@ -30,7 +30,8 @@ use rendy::{
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use crate::{
-    voxel::{AsVoxel, Context},
+    voxel::{AsVoxel},
+    context::{Context, VoxelContext},
     world::Chunk,
     coordinate::Pos,
     material::VoxelMaterialStorage,
@@ -213,7 +214,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                     if mesh.dirty {
                         let pos = Pos::new(0.0, 0.0, 0.0);
                         let scale = 16.0;
-                        let new_mesh = build_mesh(&mesh, (), pos, scale, &materials, queue, factory);
+                        let new_mesh = build_mesh(&mesh, VoxelContext::new(&mesh.data), pos, scale, &materials, queue, factory);
 
                         if id == meshes_ref.len() {
                             meshes_ref.push(new_mesh);
@@ -265,8 +266,8 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                                 (z + world.origin[2]) as f32 * scale
                             );
                             let chunk = world.data[i].get().unwrap();
-                            let focus = world.focus([x,y,z]);
-                            let new_mesh = build_mesh(chunk, focus, pos, scale, &materials, queue, factory);
+                            let context = world.context([x,y,z]);
+                            let new_mesh = build_mesh(chunk, context, pos, scale, &materials, queue, factory);
                             if id == meshes_ref.len() {
                                 meshes_ref.push(new_mesh);
                             } else {

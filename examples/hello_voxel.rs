@@ -8,7 +8,7 @@ use amethyst::{
     controls::{FlyControlBundle},
 	renderer::{
 		palette::{Srgb},
-	    plugins::{RenderToWindow, RenderShaded3D, RenderSkybox},
+	    plugins::{RenderToWindow, RenderSkybox},
 	    types::DefaultBackend,
 	    rendy::{
             mesh::{Normal, Position, TexCoord},
@@ -52,7 +52,7 @@ impl Source<ExampleVoxel> for FlatLoader {
                 .flat_map(|z| (0..16)
                     .flat_map(move |y| (0..16)
                         .map(move |x| {
-                            let limit = 5;
+                            let limit = 5 + rng.gen_range(0, 3);
                             if y < limit || (y == limit && 16u8 > rand::random()) {
                                 Simple::Material(materials_ref[rng.gen_range(0, 4)])
                             } else {
@@ -62,14 +62,6 @@ impl Source<ExampleVoxel> for FlatLoader {
         };
 
         Box::new(futures::future::ok(chunk))
-    }
-
-    fn is_limit(&self, axis: usize, coord: isize) -> bool {
-        if axis == 1 {
-            coord == 0
-        } else {
-            false
-        }
     }
 }
 
@@ -96,22 +88,14 @@ impl SimpleState for Example {
             })).take(4).collect()
         };
 
-        /*data.world
-            .create_entity()
-            .with(MutableVoxel::<ExampleVoxel>::from_iter(ExampleVoxel, (0..16).flat_map(|z| (0..16).flat_map(move |y| (0..16).map(move |x| {
-                let limit = 5 + x/5 + z/3;
-                if y < limit || (y == limit && 16u8 > rand::random()) {
-                    Simple::Material(materials_ref[rng.gen_range(0, 4)])
-                } else {
-                    Simple::Empty
-                }
-            })))))
-            .with(Transform::default())
-            .build();*/
-
         let loader = Box::new(FlatLoader { materials });
 
-        let mut world = MutableVoxelWorld::<ExampleVoxel>::new(loader, [14, 1, 14], 16.0);
+        let limits = Limits { 
+            from: [None, Some(0), None], 
+            to: [None, Some(0), None],
+        };
+
+        let mut world = MutableVoxelWorld::<ExampleVoxel>::new(loader, limits, [14, 1, 14], 16.0);
 
         world.load([0.0, 0.0, 0.0], 64.0);
 

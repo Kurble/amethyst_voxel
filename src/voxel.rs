@@ -9,6 +9,7 @@ use crate::coordinate::Pos;
 use crate::triangulate::*;
 use crate::ambient_occlusion::*;
 use crate::side::*;
+use crate::context::Context;
 use crate::material::VoxelMaterialId;
 
 /// Trait for user data associated with voxels on a specific level.
@@ -65,20 +66,6 @@ pub trait AsVoxel: Send + Sync {
     type Voxel: Voxel<Self::Data> + Clone;
 }
 
-/// Trait for retrieving neighbour information between separate root voxels.
-pub trait Context {
-    type Child: Context;
-
-    /// Same as Voxel::visible, but accepts a relative coordinate for selecting a child voxel.
-    fn visible(&self, x: isize, y: isize, z: isize) -> bool;
-
-    /// Same as Voxel::render, but accepts a relative coordinate for selecting a child voxel.
-    fn render(&self, x: isize, y: isize, z: isize) -> bool;
-
-    /// Sub
-    fn child(&self, index: usize) -> Self::Child;
-}
-
 /// A single voxel with nothing special.
 #[derive(Clone)]
 pub enum Simple {
@@ -119,16 +106,6 @@ pub enum Nested<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> {
 
 impl VoxelData for () {
     const SUBDIV: usize = 1;
-}
-
-impl Context for () {
-    type Child = ();
-
-    fn visible(&self, _: isize, _: isize, _: isize) -> bool { false }
-
-    fn render(&self, _: isize, _: isize, _: isize) -> bool { false }
-
-    fn child(&self, _: usize) -> Self::Child { }
 }
 
 impl<T: VoxelData> AsVoxel for T {
@@ -398,6 +375,18 @@ impl Voxel<()> for Simple {
     }
 }
 
+impl From<VoxelMaterialId> for Simple {
+    fn from(material: VoxelMaterialId) -> Simple {
+        Simple::Material(material)
+    }
+}
+
+impl Default for Simple {
+    fn default() -> Simple {
+        Simple::Empty
+    }
+}
+
 impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, V> {
     type ChildData = U;
     type Child = V;
@@ -476,6 +465,18 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, 
             data,
             detail: Arc::new(Vec::from_iter(iter.into_iter()))
         }
+    }
+}
+
+impl<T: VoxelData + Default, U: VoxelData, V: Voxel<U> + Clone> From<VoxelMaterialId> for Nested<T, U, V> {
+    fn from(material: VoxelMaterialId) -> Nested<T, U, V> {
+        Nested::Material { data: Default::default(), material }
+    }
+}
+
+impl<T: VoxelData + Default, U: VoxelData, V: Voxel<U> + Clone> Default for Nested<T, U, V> {
+    fn default() -> Nested<T, U, V> {
+        Nested::Empty { data: Default::default(), ph: PhantomData }
     }
 }
 

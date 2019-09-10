@@ -23,6 +23,8 @@ impl<'a, 'b, V: 'static + AsVoxel> SystemBundle<'a, 'b> for VoxelBundle<V> {
         builder: &mut DispatcherBuilder<'a, 'b>,
     ) -> Result<(), Error> {
         builder.add(crate::material::VoxelMaterialSystem, "voxel_material_system", &[]);
+        builder.add(crate::model::VoxelModelProcessor, "voxel_model_processor", &[]);
+        builder.add(crate::system::WorldLoaderSystem::<V>(PhantomData), "world_loader_system", &[]);
         Ok(())
     }
 }

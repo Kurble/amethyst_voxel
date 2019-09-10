@@ -4,22 +4,25 @@ extern crate derivative;
 mod coordinate;
 mod side;
 mod voxel;
+mod context;
 mod world;
 mod triangulate;
 mod ambient_occlusion;
 mod material;
-mod io;
+mod model;
+mod vox;
 
 mod bundle;
 mod system;
 mod plugin;
 mod pass;
 
-pub use voxel::{Simple, Nested, Voxel, AsVoxel, VoxelData, Context};
-pub use world::{MutableVoxelWorld, Source, VoxelFuture};
+pub use voxel::{Simple, Nested, Voxel, AsVoxel, VoxelData};
+pub use world::{MutableVoxelWorld, Source, Limits, VoxelFuture};
 pub use bundle::VoxelBundle;
 pub use material::{VoxelMaterial, VoxelMaterialStorage, VoxelMaterialId};
-pub use io::load_vox;
+pub use model::{VoxelModel};
+pub use vox::{VoxFormat};
 
 pub type RenderVoxelPbr<V> = plugin::RenderVoxel<pass::VoxelPassDef<amethyst::renderer::pass::PbrPassDef>, V>;
 

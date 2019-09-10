@@ -1,6 +1,7 @@
 use std::iter::repeat;
 use crate::coordinate::*;
 use crate::voxel::*;
+use crate::context::Context;
 use crate::side::*;
 use crate::ambient_occlusion::*;
 use crate::material::VoxelMaterialId;
@@ -33,6 +34,13 @@ impl<T: VoxelData> Const<T> {
     pub fn coord_to_index(x: usize, y: usize, z: usize) -> usize {
         x * Self::DX + y * Self::DY + z * Self::DZ
     }
+
+    pub fn index_to_coord(index: usize) -> (usize, usize, usize) {
+        let x = index & Self::LAST;
+        let y = (index >> T::SUBDIV) & Self::LAST;
+        let z = (index >> (T::SUBDIV*2)) & Self::LAST;
+        (x, y, z)
+    }
 }
 
 impl Mesh {
@@ -56,7 +64,7 @@ fn convert3(v: Vec3) -> [f32; 3] { [v[0], v[1], v[2]] }
 #[inline]
 fn convert4(v: Vec3) -> [f32; 4] { [v[0], v[1], v[2], 1.0] }
 
-pub fn triangulate_detail<'a, T, U, V, S, Q, C>(mesh: &mut Mesh, ao: &'a AmbientOcclusion<'a>, context: &C, origin: Pos, scale: f32, sub: &[V])
+pub fn triangulate_detail<'a, T, U, V, S, Q, C>(mesh: &mut Mesh, ao: &'a AmbientOcclusion<'a>, context: &'a C, origin: Pos, scale: f32, sub: &[V])
     where
         T: VoxelData,
         U: VoxelData,
@@ -80,7 +88,7 @@ pub fn triangulate_detail<'a, T, U, V, S, Q, C>(mesh: &mut Mesh, ao: &'a Ambient
                 context.render(x as isize + S::DX, y as isize + S::DY, z as isize + S::DZ) 
             {
                 let ao = &ao.sub(x, y, z);
-                let ctx = &context.child(i);
+                let ctx = &context.clone().child(x as isize, y as isize, z as isize);
                 let src = Pos {
                     x: origin.x + x as f32 * scale,
                     y: origin.y + y as f32 * scale,
