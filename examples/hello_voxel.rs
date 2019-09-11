@@ -20,11 +20,8 @@ use amethyst::{
 	},
 	input::{VirtualKeyCode, InputBundle, StringBindings, is_key_down},
 	utils::{scene::BasicScenePrefab},
-    ecs::Resources,
 };
 use amethyst_voxel::*;
-use rand::Rng;
-use std::iter::repeat_with;
 
 type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>), f32>;
 
@@ -88,7 +85,7 @@ impl SimpleState for Example {
         });
         data.world.create_entity().with(prefab_handle).build();
 
-        let mut rng = rand::thread_rng();
+        //let mut rng = rand::thread_rng();
 
         /*let materials: Vec<_> = {
             let mut materials = data.world.write_resource::<VoxelMaterialStorage>();
@@ -106,18 +103,21 @@ impl SimpleState for Example {
         let model_handle = {
             let loader = &data.world.read_resource::<amethyst::assets::Loader>();
             loader.load(
-                "vox/monu9.vox",
+                "vox/monu10.vox",
                 VoxFormat,
                 (),
                 &data.world.read_resource::<amethyst::assets::AssetStorage<VoxelModel>>(),
             )
         };
 
-        let world = MutableVoxelWorld::<ExampleVoxel>::new(Box::new(model_handle), [14, 1, 14], 16.0);
+        let world = MutableVoxelWorld::<ExampleVoxel>::new([4, 4, 4], 16.0);
+
+        let source = VoxelModelSource::new(model_handle);
 
         data.world
             .create_entity()
             .with(world)
+            .with(source)
             .with(Transform::default())
             .build();
     }
@@ -166,8 +166,9 @@ fn main() -> amethyst::Result<()> {
             InputBundle::<StringBindings>::new()
                 .with_bindings_from_file(&key_bindings_path)?,
         )?
-        
-    	.with_bundle(VoxelBundle::<ExampleVoxel>::new())?
+    	.with_bundle(VoxelBundle::new()
+            .with_source::<ExampleVoxel, VoxelModelSource>()
+        )?
     	.with_bundle(
         	RenderingBundle::<DefaultBackend>::new()
 	            .with_plugin(

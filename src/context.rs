@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::world::MutableVoxelWorld;
 use crate::triangulate::*;
 use crate::voxel::*;
 
@@ -26,6 +27,11 @@ pub struct DetailContext<'a, T: VoxelData, V: Voxel<T>, P: Context<Child=Self>> 
     coord: [isize; 3],
     voxel: Option<&'a V>,
     phantom: PhantomData<T>,
+}
+
+pub struct WorldContext<'a, V: AsVoxel> {
+    coord: [isize; 3], 
+    world: &'a MutableVoxelWorld<V>,
 }
 
 impl<'a, V: Voxel<T>, T: VoxelData> VoxelContext<'a, T, V> {
@@ -119,3 +125,63 @@ impl<'a, T: VoxelData, V: Voxel<T>, P: Context<Child=Self>> Context for DetailCo
         DetailContext::new(self.clone(), [x, y, z], self.find(x, y, z))
     }
 }
+
+impl<'a, V: AsVoxel> WorldContext<'a, V> {
+    pub fn new(coord: [isize; 3], world: &'a MutableVoxelWorld<V>) -> Self {
+        Self {
+            coord,
+            world,
+        }
+    }
+}
+
+impl<'a, V: AsVoxel> Clone for WorldContext<'a, V> {
+    fn clone(&self) -> Self {
+        WorldContext{
+            coord: self.coord,
+            world: self.world,
+        }
+    }
+}
+
+impl<'a, V: AsVoxel> WorldContext<'a, V> {
+    fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a <V::Voxel as Voxel<V::Data>>::Child> {
+        let size = Const::<V::Data>::WIDTH as isize;
+        let grid = |x| if x >= 0 { x / size } else { (x+1) / size - 1};
+        let coord = [self.coord[0]+grid(x), self.coord[1]+grid(y), self.coord[2]+grid(z)];
+        
+        if (0..3).fold(true, |b, i| b && coord[i] >= 0 && coord[i] < self.world.dims[i] as isize) {
+            let index = coord[0] as usize + 
+                coord[1] as usize * self.world.dims[0] + 
+                coord[2] as usize * self.world.dims[0] * self.world.dims[1];
+            if let Some(voxel) = self.world.data[index].get() {
+                let grid_mod = |x: isize| if x%size >= 0 { x%size } else { x%size + size } as usize;
+                voxel.child(
+                    grid_mod(x)*Const::<V::Data>::DX + 
+                    grid_mod(y)*Const::<V::Data>::DY + 
+                    grid_mod(z)*Const::<V::Data>::DZ)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, V: AsVoxel> Context for WorldContext<'a, V> {
+    type Child = DetailContext<'a, <V::Voxel as Voxel<V::Data>>::ChildData, <V::Voxel as Voxel<V::Data>>::Child, Self>;
+
+    fn visible(&self, x: isize, y: isize, z: isize) -> bool {
+        self.find(x, y, z).map(|c| c.visible()).unwrap_or(false)
+    }
+
+    fn render(&self, x: isize, y: isize, z: isize) -> bool {
+        self.find(x, y, z).map(|c| c.render()).unwrap_or(false)
+    }
+
+    fn child(self, x: isize, y: isize, z: isize) -> Self::Child {
+        DetailContext::new(self.clone(), [x, y, z], self.find(x, y, z))
+    }
+}
+

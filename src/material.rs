@@ -52,6 +52,7 @@ impl VoxelMaterialStorage {
 
         VoxelMaterialId(result.unwrap_or_else(|| {
             self.materials.push(material);
+            self.dirty = true;
             self.materials.len() as u32 - 1
         }))
     }
@@ -116,8 +117,6 @@ impl<'a> System<'a> for VoxelMaterialSystem {
 
     fn run(&mut self, (mut storage, defaults, loader, textures, materials): Self::SystemData) {
         if storage.dirty {
-            println!("{:?}", storage.materials);
-
             storage.size = {
                 let mut size = 32;
                 while storage.materials.len() > size*size {
@@ -130,7 +129,7 @@ impl<'a> System<'a> for VoxelMaterialSystem {
                 build_texture(storage.size, storage.materials
                     .iter()
                     .map(|m| [m.albedo[0], m.albedo[1], m.albedo[2], m.alpha])
-                    .chain(repeat([0,0,0,255]))
+                    .chain(repeat([255,0,255,255]))
                 ).into(),
                 (),
                 &textures,
@@ -150,7 +149,7 @@ impl<'a> System<'a> for VoxelMaterialSystem {
                 build_texture(storage.size, storage.materials
                     .iter()
                     .map(|m| [0, m.metallic, m.roughness, 255])
-                    .chain(repeat([0,0,0,255]))
+                    .chain(repeat([0,8,240,255]))
                 ).into(),
                 (),
                 &textures,

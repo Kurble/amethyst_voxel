@@ -104,7 +104,7 @@ fn load_vox<R>(mut reader: R) -> Result<Vec<VoxelModelData>> where
                     albedo: old.albedo,
                     emission: old.emission,
                     alpha: old.alpha,
-                    metallic: mul_value(255, 1.0 - weight),
+                    metallic: mul_value(255, weight),
                     roughness: mul_value(255, roughness),
                 },
                 1 /*metal*/ => VoxelMaterial {
@@ -175,8 +175,8 @@ fn rgba_to_material(r: u8, g: u8, b: u8, a: u8) -> VoxelMaterial {
         albedo: [r, g, b],
         emission: [0, 0, 0],
         alpha: a,
-        metallic: 0,
-        roughness: 255,
+        metallic: 8,
+        roughness: 240,
     }
 }
 

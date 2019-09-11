@@ -11,9 +11,7 @@ mod ambient_occlusion;
 mod material;
 mod model;
 mod vox;
-
 mod bundle;
-mod system;
 mod plugin;
 mod pass;
 
@@ -21,7 +19,7 @@ pub use voxel::{Simple, Nested, Voxel, AsVoxel, VoxelData};
 pub use world::{MutableVoxelWorld, Source, Limits, VoxelFuture};
 pub use bundle::VoxelBundle;
 pub use material::{VoxelMaterial, VoxelMaterialStorage, VoxelMaterialId};
-pub use model::{VoxelModel};
+pub use model::{VoxelModel, VoxelModelSource};
 pub use vox::{VoxFormat};
 
 pub type RenderVoxelPbr<V> = plugin::RenderVoxel<pass::VoxelPassDef<amethyst::renderer::pass::PbrPassDef>, V>;

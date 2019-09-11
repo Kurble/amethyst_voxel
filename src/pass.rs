@@ -31,7 +31,7 @@ use smallvec::SmallVec;
 use std::marker::PhantomData;
 use crate::{
     voxel::{AsVoxel},
-    context::{Context, VoxelContext},
+    context::{Context, VoxelContext, WorldContext},
     world::Chunk,
     coordinate::Pos,
     material::VoxelMaterialStorage,
@@ -52,7 +52,7 @@ pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: AsVoxel> {
     pipeline_basic: B::GraphicsPipeline,
     pipeline_layout: B::PipelineLayout,
     static_batches: TwoLevelBatch<MaterialId, usize, SmallVec<[VertexArgs; 4]>>,
-    meshes: Vec<Mesh>,
+    meshes: Vec<Option<Mesh>>,
     vertex_format_base: Vec<VertexFormat>,
     vertex_format_skinned: Vec<VertexFormat>,
     env: EnvironmentSub<B>,
@@ -266,7 +266,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                                 (z + world.origin[2]) as f32 * scale
                             );
                             let chunk = world.data[i].get().unwrap();
-                            let context = world.context([x,y,z]);
+                            let context = WorldContext::new([x,y,z], world);
                             let new_mesh = build_mesh(chunk, context, pos, scale, &materials, queue, factory);
                             if id == meshes_ref.len() {
                                 meshes_ref.push(new_mesh);
@@ -320,7 +320,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                     self.materials
                         .bind(&self.pipeline_layout, 1, mat_id, &mut encoder);
                     for (mesh_id, batch_data) in batches {
-                        if let Some(mesh) = B::unwrap_mesh(&self.meshes[*mesh_id])
+                        if let Some(mesh) = self.meshes[*mesh_id].as_ref().and_then(B::unwrap_mesh)
                         {
                             mesh.bind_and_draw(
                                 0,
@@ -365,7 +365,7 @@ fn build_mesh<'a, B, V, C>(
     materials: &VoxelMaterialStorage,
     queue: QueueId, 
     factory: &Factory<B>
-) -> Mesh where
+) -> Option<Mesh> where
     B: Backend, 
     V: AsVoxel, 
     C: Context,
@@ -379,9 +379,13 @@ fn build_mesh<'a, B, V, C>(
 
     let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| materials.coord(mat, ao)).collect();
 
-    B::wrap_mesh(MeshBuilder::new()
-        .with_vertices(pos).with_vertices(nml).with_vertices(tan).with_vertices(tex)
-        .with_indices(ind).build(queue, factory).unwrap())
+    if pos.len() > 0 {
+        Some(B::wrap_mesh(MeshBuilder::new()
+            .with_vertices(pos).with_vertices(nml).with_vertices(tan).with_vertices(tex)
+            .with_indices(ind).build(queue, factory).unwrap()))
+    } else {
+        None
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
