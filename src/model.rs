@@ -1,9 +1,9 @@
 use amethyst::{
-	ecs::{Component, System, 
+    ecs::{Component, System, 
         Write, WriteExpect, 
         Read, ReadExpect, DenseVecStorage, VecStorage},
-	assets::{Asset, AssetStorage, Handle, HotReloadStrategy, ProcessingState},
-	core::{ArcThreadPool, Time},
+    assets::{Asset, AssetStorage, Handle, HotReloadStrategy, ProcessingState},
+    core::{ArcThreadPool, Time},
 };
 use crate::{
     material::{VoxelMaterial, VoxelMaterialId, VoxelMaterialStorage},
@@ -36,7 +36,7 @@ pub struct VoxelModelSource {
 pub struct VoxelModelProcessor;
 
 impl Asset for VoxelModel {
-	const NAME: &'static str = "amethyst_voxel::VoxelModel";
+    const NAME: &'static str = "amethyst_voxel::VoxelModel";
     
     type Data = VoxelModelData;
     type HandleStorage = VecStorage<Handle<VoxelModel>>;
@@ -59,23 +59,23 @@ impl<'a> System<'a> for VoxelModelProcessor {
         model_storage.process(
             |b| {
                 let materials: Vec<_> = b.materials
-                	.iter()
-                	.map(|&m| material_storage.create(m))
-                	.collect();
+                    .iter()
+                    .map(|&m| material_storage.create(m))
+                    .collect();
                 let mut voxels: Vec<_> = repeat(None)
-                	.take(b.dimensions[0]*b.dimensions[1]*b.dimensions[2])
-                	.collect();
+                    .take(b.dimensions[0]*b.dimensions[1]*b.dimensions[2])
+                    .collect();
 
                 for (index, material) in b.voxels {
                     let x = index % b.dimensions[0];
                     let y = (index / (b.dimensions[0] * b.dimensions[1])) % b.dimensions[2];
                     let z = (index / b.dimensions[0]) % b.dimensions[1];
-                	voxels[x+y*b.dimensions[0]+z*b.dimensions[2]*b.dimensions[0]] = Some(materials[material]);
+                    voxels[x+y*b.dimensions[0]+z*b.dimensions[2]*b.dimensions[0]] = Some(materials[material]);
                 }
 
                 Ok(ProcessingState::Loaded(VoxelModel {
-                	voxels,
-                	dimensions: [b.dimensions[0], b.dimensions[2], b.dimensions[1]],
+                    voxels,
+                    dimensions: [b.dimensions[0], b.dimensions[2], b.dimensions[1]],
                 }))
             },
             time.frame_number(),
@@ -109,8 +109,10 @@ impl<'a, V> Source<'a, V> for VoxelModelSource where
 
     fn process(&mut self, models: &mut Self::SystemData) {
         if let Some(model) = models.get(&self.handle) {
+            let w = Const::<V::Data>::WIDTH as isize;
             for i in 0..3 {
-                self.limits.to[i] = Some(model.dimensions[i] as isize / Const::<V::Data>::WIDTH as isize);
+                let d = model.dimensions[i] as isize;
+                self.limits.to[i] = Some(if d%w == 0 { d/w - 1 } else { d/w });
             }
             for request in self.requests.drain(..) {
                 request(model);

@@ -110,7 +110,7 @@ impl SimpleState for Example {
             )
         };
 
-        let world = MutableVoxelWorld::<ExampleVoxel>::new([4, 4, 4], 16.0);
+        let world = MutableVoxelWorld::<ExampleVoxel>::new([12, 8, 12], 16.0);
 
         let source = VoxelModelSource::new(model_handle);
 

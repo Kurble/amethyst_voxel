@@ -114,10 +114,16 @@ pub fn triangulate_face<T, S>(m: &mut Mesh, ao: &AmbientOcclusion, ori: Pos, sc:
     let center = vec3(ori.x+sc, ori.y+sc, ori.z+sc);
     let normal = transform * vec3(0.0, 0.0, 1.0);
     let tangent = transform * vec3(1.0, 0.0, 0.0);
+    let occlusion = ao.quad::<T, S>();
 
     m.pos.extend(quad.iter().map(|pos| Position(convert3(transform*pos + center))));
     m.nml.extend(repeat(Normal(convert3(normal))).take(4));
     m.tan.extend(repeat(Tangent(convert4(tangent))).take(4));
-    m.tex.extend(repeat(mat.0).zip(ao.quad::<T, S>().iter().cloned()));
-    m.ind.extend_from_slice(&[begin, begin+1, begin+2, begin, begin+2, begin+3]);
+    m.tex.extend(repeat(mat.0).zip(occlusion.iter().cloned()));
+
+    if occlusion[0]+occlusion[2] > occlusion[1]+occlusion[3] {
+        m.ind.extend_from_slice(&[begin, begin+1, begin+2, begin, begin+2, begin+3]);
+    } else {
+        m.ind.extend_from_slice(&[begin, begin+1, begin+3, begin+1, begin+2, begin+3]);
+    }
 }

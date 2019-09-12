@@ -53,12 +53,24 @@ impl<'a, T, U, V> BuildAmbientOcclusion<'a, T, Nested<T, U, V>> for AmbientOcclu
                 	else { 0 }
 	            };
                 let process = |s: [u16; 8]| {
-                    let neg_x = (s[0]+s[1]+s[4]+s[5]).min(3);
-                    let pos_x = (s[2]+s[3]+s[6]+s[7]).min(3);
-                    let neg_y = (s[0]+s[1]+s[2]+s[3]).min(3);
-                    let pos_y = (s[4]+s[5]+s[6]+s[7]).min(3);
-                    let neg_z = (s[0]+s[2]+s[4]+s[6]).min(3);
-                    let pos_z = (s[1]+s[3]+s[5]+s[7]).min(3);
+                    let table = |s: [u16; 4]| match s {
+                        [0,0,0,0] => 0,
+                        [1,0,0,0] | 
+                        [0,1,0,0] | 
+                        [0,0,1,0] | 
+                        [0,0,0,1] => 1,
+                        [1,1,0,0] |
+                        [0,0,1,1] |
+                        [0,1,0,1] |
+                        [1,0,1,0] => 2,
+                        _ => 3,
+                    };
+                    let neg_x = table([s[0],s[1],s[4],s[5]]);
+                    let pos_x = table([s[2],s[3],s[6],s[7]]);
+                    let neg_y = table([s[0],s[1],s[2],s[3]]);
+                    let pos_y = table([s[4],s[5],s[6],s[7]]);
+                    let neg_z = table([s[0],s[2],s[4],s[6]]);
+                    let pos_z = table([s[1],s[3],s[5],s[7]]);
 
                     (neg_x << 10)|(pos_x << 8)|(neg_y << 6)|(pos_y << 4)|(neg_z << 2)|(pos_z)
                 };
@@ -137,14 +149,14 @@ impl AmbientOcclusion<'_> {
     }
 
     pub(crate) fn quad<T: VoxelData, S: Side<T>>(&self) -> [f32; 4] {
-        let f = |d: u16, s: u16| 1.0 - f32::from((d >> s) & 0x03) / 3.0;
+        let f = |d: u16, s: u16| 1.0 - f32::from((d >> s) & 0x03) / 4.0;
         match *self {
             AmbientOcclusion::Small{ occlusion } => {
                 let o = &occlusion;
                 match S::SIDE {
                     0 => [f(o[6], 10), f(o[2], 10), f(o[0], 10), f(o[4], 10)],
                     1 => [f(o[3],  8), f(o[7],  8), f(o[5],  8), f(o[1],  8)],
-                    2 => [f(o[4],  6), f(o[5],  6), f(o[1],  6), f(o[0],  6)],
+                    2 => [f(o[5],  6), f(o[4],  6), f(o[0],  6), f(o[1],  6)],
                     3 => [f(o[3],  4), f(o[2],  4), f(o[6],  4), f(o[7],  4)],
                     4 => [f(o[2],  2), f(o[3],  2), f(o[1],  2), f(o[0],  2)],
                     5 => [f(o[7],  0), f(o[6],  0), f(o[4],  0), f(o[5],  0)],

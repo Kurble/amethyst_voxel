@@ -59,7 +59,7 @@ fn load_vox<R>(mut reader: R) -> Result<Vec<VoxelModelData>> where
         }
 
         // the content for a model
-        if chunk.is("XYZI") {
+        else if chunk.is("XYZI") {
             let num = chunk.content.read_u32::<E>()? as usize;
             let mut vox = Vec::new();
             for _ in 0..num {
@@ -73,7 +73,7 @@ fn load_vox<R>(mut reader: R) -> Result<Vec<VoxelModelData>> where
         }
 
         // the used palette. Colors are diffuse. Overwrites the current palette.
-        if chunk.is("RGBA") {
+        else if chunk.is("RGBA") {
             materials.clear();
             materials.push(VoxelMaterial::default());
             for _ in 0..255 {
@@ -86,46 +86,53 @@ fn load_vox<R>(mut reader: R) -> Result<Vec<VoxelModelData>> where
         }
 
         // PBR properties for a single material in the palette
-        if chunk.is("MATT") {
+        else if chunk.is("MATT") {
             let id = chunk.content.read_u32::<E>()? as usize;
             let ty = chunk.content.read_u32::<E>()?;
             let weight = chunk.content.read_f32::<E>()?;
             let props = chunk.content.read_u32::<E>()?;
             let old = materials[id];
             let _plastic =     if bit(props, 0) { chunk.content.read_f32::<E>()? } else { 0.0 };
-            let roughness =    if bit(props, 1) { chunk.content.read_f32::<E>()? } else { 0.0 };
+            let roughness =    if bit(props, 1) { chunk.content.read_f32::<E>()? } else { 1.0 };
             let _specular =    if bit(props, 2) { chunk.content.read_f32::<E>()? } else { 0.0 };
             let _ior =         if bit(props, 3) { chunk.content.read_f32::<E>()? } else { 0.0 };
             let _attenuation = if bit(props, 4) { chunk.content.read_f32::<E>()? } else { 0.0 };
             let _power =       if bit(props, 5) { chunk.content.read_f32::<E>()? } else { 0.0 };
             let _glow =        if bit(props, 6) { chunk.content.read_f32::<E>()? } else { 0.0 };
+
+            println!("MATT chunk. id: {}, ty: {}, weight: {}, props: {}", id, ty, weight, props);
+
             materials[id] = match ty {
                 0 /*diffuse*/ => VoxelMaterial {
                     albedo: old.albedo,
                     emission: old.emission,
                     alpha: old.alpha,
-                    metallic: mul_value(255, weight),
+                    metallic: mul_value(255, 1.0 - weight),
                     roughness: mul_value(255, roughness),
                 },
                 1 /*metal*/ => VoxelMaterial {
                     albedo: old.albedo,
                     emission: old.emission,
                     alpha: old.alpha,
-                    metallic: mul_value(255, weight),
+                    metallic: mul_value(255, 1.0 - weight),
                     roughness: mul_value(255, roughness),
                 },
                 2 /*glass*/ => VoxelMaterial {
                     albedo: old.albedo,
                     emission: old.emission,
                     alpha: old.alpha,
-                    metallic: mul_value(255, weight),
+                    metallic: mul_value(255, 1.0 - weight),
                     roughness: mul_value(255, roughness),
                 },
                 3 /*emissive*/ => VoxelMaterial {
                     albedo: old.albedo,
-                    emission: old.albedo,
+                    emission: [
+                        mul_value(old.albedo[0], weight),
+                        mul_value(old.albedo[1], weight),
+                        mul_value(old.albedo[2], weight),
+                    ],
                     alpha: old.alpha,
-                    metallic: mul_value(255, weight),
+                    metallic: old.metallic,
                     roughness: mul_value(255, roughness),
                 },
                 _ => old,

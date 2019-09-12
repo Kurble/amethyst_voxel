@@ -72,37 +72,29 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
 
     pub(crate) fn get_ready_chunk(&mut self, index: usize) -> Option<&mut MutableVoxel<V>> {
         if self.data[index].get_mut().map(|c| c.dirty).unwrap_or(false) {
-            let coord = [
-                index % self.dims[0],
-                (index / self.dims[0]) % self.dims[1],
-                index / (self.dims[0] * self.dims[1]),
-            ];
-            let offset = [
-                1, 
-                self.dims[0], 
-                self.dims[0]*self.dims[1]
-            ];
-
-            let available = coord.iter().enumerate().fold(true, |available, (i, &x)| {
-                let pos = self.origin[i] + x as isize;
-                let test_neg = self.limits.from[i].map(|y| pos > y).unwrap_or(x > 0);
-                let test_pos = self.limits.to[i].map(|y| pos < y).unwrap_or(x < self.dims[i]-1);
-                if test_neg && self.data[index - offset[i]].get_mut().is_none() {
-                    false
-                } else if test_pos && self.data[index + offset[i]].get_mut().is_none() {
-                    false
-                } else {
-                    available
-                }
-            });
-
-            if available {
+            if self.available(0, index, 1) {
                 self.data[index].get_mut()
             } else {
                 None
             }
         } else {
             None
+        }
+    }
+
+    fn available(&self, axis: usize, index: usize, offset: usize) -> bool {
+        if axis < 3 {
+            let x = (index/offset)%self.dims[axis];
+            let pos = self.origin[axis] + x as isize;
+
+            let left = self.limits.from[axis].map(|limit| pos <= limit).unwrap_or(false);
+            let left = left || (x > 0 && self.available(axis+1, index - offset, offset * self.dims[axis]));
+            let right = self.limits.to[axis].map(|limit| pos >= limit).unwrap_or(false);
+            let right = right || (x < self.dims[axis]-1 && self.available(axis+1, index + offset, offset * self.dims[axis]));
+
+            left && right && self.available(axis+1, index, offset * self.dims[axis])
+        } else {
+            self.data[index].get().is_some()
         }
     }
 }
@@ -182,6 +174,7 @@ impl<'s, V: 'static + AsVoxel, S: for<'a> Source<'a, V> + Component> System<'s> 
 
         for (world, source) in (&mut worlds, &mut sources).join() {
             let limits = source.limits();
+            world.limits = source.limits();
 
             let origin = {
                 let f = |i: usize| {

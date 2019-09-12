@@ -75,8 +75,8 @@ impl Default for VoxelMaterial {
             albedo: [255, 255, 255],
             emission: [0, 0, 0],
             alpha: 255,
-            metallic: 0,
-            roughness: 0,
+            metallic: 8,
+            roughness: 250,
         }
     }
 }
@@ -148,8 +148,8 @@ impl<'a> System<'a> for VoxelMaterialSystem {
             let metallic_roughness = loader.load_from_data(
                 build_texture(storage.size, storage.materials
                     .iter()
-                    .map(|m| [0, m.metallic, m.roughness, 255])
-                    .chain(repeat([0,8,240,255]))
+                    .map(|m| [0, m.roughness, m.metallic, 255])
+                    .chain(repeat([0,240,8,255]))
                 ).into(),
                 (),
                 &textures,
