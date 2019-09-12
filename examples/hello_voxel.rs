@@ -34,47 +34,6 @@ impl VoxelData for ExampleVoxel {
 
 struct Example;
 
-/*
-struct FlatLoader {
-    materials: Vec<VoxelMaterialId>,
-}
-
-impl Source<ExampleVoxel> for FlatLoader {
-    fn limits(&self) -> Limits {
-        Limits { 
-            from: [None, Some(0), None], 
-            to: [None, Some(0), None],
-        }
-    }
-
-    fn ready(&self, _: &Resources) -> bool { 
-        true
-    }
-
-    fn load(&mut self, _: &Resources, _coord: [isize; 3]) -> VoxelFuture<ExampleVoxel> {
-        let mut rng = rand::thread_rng();
-
-        let materials_ref = &self.materials;
-
-        let chunk = Nested::Detail {
-            data: ExampleVoxel,
-            detail: std::sync::Arc::new((0..16)
-                .flat_map(|_| (0..16)
-                    .flat_map(move |y| (0..16)
-                        .map(move |_| {
-                            let limit = 5 + rng.gen_range(0, 3);
-                            if y < limit || (y == limit && 16u8 > rand::random()) {
-                                Simple::Material(materials_ref[rng.gen_range(0, 4)])
-                            } else {
-                                Simple::Empty
-                            }
-                        }))).collect()),
-        };
-
-        Box::new(futures::future::ok(chunk))
-    }
-}*/
-
 impl SimpleState for Example {
     fn on_start(&mut self, data: StateData<GameData>) {
         data.world.register::<MutableVoxel<ExampleVoxel>>();
@@ -85,21 +44,6 @@ impl SimpleState for Example {
         });
         data.world.create_entity().with(prefab_handle).build();
 
-        //let mut rng = rand::thread_rng();
-
-        /*let materials: Vec<_> = {
-            let mut materials = data.world.write_resource::<VoxelMaterialStorage>();
-            repeat_with(|| materials.create(VoxelMaterial {
-                albedo: [128 + rng.gen_range(0, 128), rng.gen(), rng.gen()],
-                alpha: 255,
-                emission: [0, 0, 0],
-                metallic: rng.gen(),
-                roughness: rng.gen(),
-            })).take(4).collect()
-        };
-
-        let loader = Box::new(FlatLoader { materials });*/
-
         let model_handle = {
             let loader = &data.world.read_resource::<amethyst::assets::Loader>();
             loader.load(
@@ -109,6 +53,8 @@ impl SimpleState for Example {
                 &data.world.read_resource::<amethyst::assets::AssetStorage<VoxelModel>>(),
             )
         };
+
+        println!("loading");
 
         let world = MutableVoxelWorld::<ExampleVoxel>::new([12, 8, 12], 16.0);
 

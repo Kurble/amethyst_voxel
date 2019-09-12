@@ -17,9 +17,9 @@ use std::iter::repeat;
 use futures::{Future, Async};
 
 pub struct VoxelModelData {
-    pub materials: Arc<[VoxelMaterial]>,
-    pub voxels: Vec<(usize, usize)>,
-    pub dimensions: [usize; 3],
+    materials: Arc<[VoxelMaterial]>,
+    voxels: Vec<(usize, usize)>,
+    dimensions: [usize; 3],
 }
 
 pub struct VoxelModel {
@@ -34,6 +34,16 @@ pub struct VoxelModelSource {
 }
 
 pub struct VoxelModelProcessor;
+
+impl VoxelModelData {
+    pub fn new(materials: Arc<[VoxelMaterial]>, voxels: Vec<(usize, usize)>, dimensions: [usize; 3]) -> Self {
+        Self {
+            materials,
+            voxels,
+            dimensions
+        }
+    }
+}
 
 impl Asset for VoxelModel {
     const NAME: &'static str = "amethyst_voxel::VoxelModel";

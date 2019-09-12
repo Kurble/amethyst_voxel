@@ -147,16 +147,16 @@ fn load_vox<R>(mut reader: R) -> Result<Vec<VoxelModelData>> where
         .into_iter()
         .zip(voxels)
         .map(|(size, voxels)| {
-            VoxelModelData {
-                materials: materials.clone(),
-                voxels: voxels.into_iter().map(|(x, y, z, i)| {
+            VoxelModelData::new(
+                materials.clone(),
+                voxels.into_iter().map(|(x, y, z, i)| {
                     let index = x as usize + 
                         y as usize * size.0 + 
                         z as usize * size.0 * size.1;
                     (index, i as usize)
                 }).collect(),
-                dimensions: [size.0, size.1, size.2],
-            }
+                [size.0, size.1, size.2],
+            )
         })
         .collect())
 }
@@ -178,6 +178,11 @@ fn bit(field: u32, bit: u32) -> bool {
 
 // convert a simple r,g,b,a material to a VoxelMaterial
 fn rgba_to_material(r: u8, g: u8, b: u8, a: u8) -> VoxelMaterial {
+
+    //let r = ((r as f32 / 255.0).powf(2.2 / 1.0) * 255.0) as u8;
+    //let g = ((g as f32 / 255.0).powf(2.2 / 1.0) * 255.0) as u8;
+    //let b = ((b as f32 / 255.0).powf(2.2 / 1.0) * 255.0) as u8;
+
     VoxelMaterial {
         albedo: [r, g, b],
         emission: [0, 0, 0],
