@@ -6,13 +6,13 @@ use amethyst::{
     renderer::{
         types::{Texture},
         mtl::{Material, MaterialDefaults},
-        palette::{LinSrgba},
+        palette::*,
         rendy::{
             mesh::Color,
             hal::image::{Kind, ViewKind},
             texture::{
                 TextureBuilder,
-                pixel::{Rgba8Unorm},
+                pixel::*,
             },
         },
     },
@@ -59,8 +59,8 @@ impl VoxelMaterialStorage {
     }
 
     pub(crate) fn coord(&self, material: u32, ao: f32) -> Color {
-        let x = (material as usize % self.size) as f32;
-        let y = (material as usize / self.size) as f32;
+        let x = (material as usize % self.size) as f32 + 0.5;
+        let y = (material as usize / self.size) as f32 + 0.5;
         let w = self.size as f32;
         Color([x / w, y / w, ao, 1.0])
     }
@@ -100,7 +100,7 @@ fn build_texture<'a, I: Iterator<Item=[u8;4]>>(width: usize, iter: I) -> Texture
         .with_view_kind(ViewKind::D2)
         .with_data_width(width as u32)
         .with_data_height(width as u32)
-        .with_data(Cow::<[Rgba8Unorm]>::from(iter
+        .with_data(Cow::<[Rgba8Srgb]>::from(iter
             .take(size)
             .map(|p| {
                 LinSrgba::new(p[0], p[1], p[2], p[3]).into()
