@@ -100,10 +100,10 @@ fn build_texture<'a, I: Iterator<Item=[u8;4]>>(width: usize, iter: I) -> Texture
         .with_view_kind(ViewKind::D2)
         .with_data_width(width as u32)
         .with_data_height(width as u32)
-        .with_data(Cow::<[Rgba8Srgb]>::from(iter
+        .with_data(Cow::<[Rgba8Unorm]>::from(iter
             .take(size)
             .map(|p| {
-                LinSrgba::new(p[0], p[1], p[2], p[3]).into()
+                Srgba::new(p[0], p[1], p[2], p[3]).into()
             })
             .collect::<Vec<_>>()))
 }

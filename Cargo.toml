@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 amethyst = { version = "0.12", features = ["metal"] }
-nalgebra-glm = "0.2.0"
+nalgebra-glm = "0.4"
 derivative = "1.0"
 smallvec = "0.6.9"
 failure = "0.1"

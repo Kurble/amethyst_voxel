@@ -32,12 +32,10 @@ use std::marker::PhantomData;
 use crate::{
     voxel::{AsVoxel},
     context::{Context, VoxelContext, WorldContext},
-    world::Chunk,
+    world::{MutableVoxelWorld, MutableVoxel, Chunk},
     coordinate::Pos,
     material::VoxelMaterialStorage,
     ambient_occlusion::*,
-    MutableVoxelWorld,
-    MutableVoxel,
 };
 
 #[derive(Clone, Derivative)]

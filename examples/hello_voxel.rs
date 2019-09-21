@@ -1,10 +1,12 @@
 use amethyst::prelude::*;
 use amethyst::{
+    ecs::prelude::*,
 	assets::{PrefabLoader, PrefabLoaderSystem, RonFormat},
 	core::{
         //shrev::{EventChannel, ReaderId},
         transform::{TransformBundle, Transform},
     },
+    window::{ScreenDimensions},
     controls::{FlyControlBundle},
 	renderer::{
 		palette::{Srgb},
@@ -13,15 +15,20 @@ use amethyst::{
 	    rendy::{
             mesh::{Normal, Position, TexCoord},
         },
-	    RenderingBundle
+	    RenderingBundle,
+        ActiveCamera,
+        Camera,
 	},
 	utils::{
 		application_root_dir,
 	},
-	input::{VirtualKeyCode, InputBundle, StringBindings, is_key_down},
+	input::{VirtualKeyCode, InputBundle, InputHandler, StringBindings, is_key_down, is_mouse_button_down},
+    winit::MouseButton,
 	utils::{scene::BasicScenePrefab},
 };
-use amethyst_voxel::*;
+use amethyst_voxel::prelude::*;
+use std::mem::replace;
+use nalgebra_glm::*;
 
 type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>), f32>;
 
@@ -32,7 +39,17 @@ impl VoxelData for ExampleVoxel {
     const SUBDIV: usize = 4;
 }
 
-struct Example;
+struct Example {
+    voxels: Option<Entity>,
+}
+
+impl Example {
+    pub fn new() -> Self {
+        Self {
+            voxels: None,
+        }
+    }
+}
 
 impl SimpleState for Example {
     fn on_start(&mut self, data: StateData<GameData>) {
@@ -47,35 +64,68 @@ impl SimpleState for Example {
         let model_handle = {
             let loader = &data.world.read_resource::<amethyst::assets::Loader>();
             loader.load(
-                "vox/monu10.vox",
+                "vox/monu9.vox",
                 VoxFormat,
                 (),
                 &data.world.read_resource::<amethyst::assets::AssetStorage<VoxelModel>>(),
             )
         };
 
-        println!("loading");
-
         let world = MutableVoxelWorld::<ExampleVoxel>::new([12, 8, 12], 16.0);
 
         let source = VoxelModelSource::new(model_handle);
 
-        data.world
+        self.voxels = Some(data.world
             .create_entity()
             .with(world)
             .with(source)
             .with(Transform::default())
-            .build();
+            .build());
     }
 
     fn update(&mut self, _: &mut StateData<GameData>) -> SimpleTrans {
         Trans::None
     }
 
-    fn handle_event(&mut self, _: StateData<'_, GameData<'_, '_>>, event: StateEvent) -> SimpleTrans {
+    fn handle_event(&mut self, state: StateData<'_, GameData<'_, '_>>, event: StateEvent) -> SimpleTrans {
         if let StateEvent::Window(event) = event {
             if is_key_down(&event, VirtualKeyCode::Escape) {
                 Trans::Quit
+            } else if is_mouse_button_down(&event, MouseButton::Left) {
+
+                let mut store = state.world.write_storage::<MutableVoxelWorld<ExampleVoxel>>();
+                let screen = state.world.read_resource::<ScreenDimensions>();
+                let active_camera = state.world.read_resource::<ActiveCamera>();
+                let cameras = state.world.read_storage::<Camera>();
+                let transforms = state.world.read_storage::<Transform>();
+
+                let (origin, direction) = {
+                    let (camera, transform) = active_camera.entity
+                        .as_ref()
+                        .and_then(|ac| cameras.get(*ac).and_then(|c| transforms.get(*ac).map(|t| (c,t))))
+                        .or_else(|| (&cameras, &transforms)
+                            .join()
+                            .next())
+                        .unwrap();
+
+                    //let mouse = input.mouse_position().map(|(x, y)| [x, y].into()).unwrap();
+                    let screen = screen.diagonal();
+                    let point = [screen.x * 0.5, screen.y * 0.5].into();
+                    let point = camera.projection().screen_to_world(point, screen, transform);
+                    let origin = transform.global_matrix().column(3).xyz();
+                    let direction = (vec3(point.x, point.y, point.z) - origin).normalize();
+
+                    (origin, direction)
+                };
+
+                let voxels = store.get_mut(self.voxels.unwrap()).unwrap();
+
+                let ray = voxels.ray(origin, direction);
+                if let Some(voxel) = voxels.select_mut::<Simple>(&ray) {
+                    replace(voxel, Simple::Empty);
+                }
+
+                Trans::None
             } else {
                 Trans::None
             }
@@ -113,6 +163,7 @@ fn main() -> amethyst::Result<()> {
                 .with_bindings_from_file(&key_bindings_path)?,
         )?
     	.with_bundle(VoxelBundle::new()
+            .with_voxel::<ExampleVoxel>()
             .with_source::<ExampleVoxel, VoxelModelSource>()
         )?
     	.with_bundle(
@@ -128,7 +179,7 @@ fn main() -> amethyst::Result<()> {
                 )),
     	)?;
 
-    let mut game = Application::build(assets_directory, Example)?
+    let mut game = Application::build(assets_directory, Example::new())?
         .build(game_data)?;
     game.run();
 

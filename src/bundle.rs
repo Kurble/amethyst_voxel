@@ -6,8 +6,8 @@ use amethyst::{
 use crate::{
     voxel::{AsVoxel},
     world::Source,
+    collision::Raycast,
 };
-
 
 #[derive(Default)]
 pub struct VoxelBundle {
@@ -28,6 +28,16 @@ impl VoxelBundle {
         self.systems.push(Box::new(|builder| builder.add(
             crate::world::WorldSourceSystem::<V, S>::new(), "world_sourcing", &[]
         )));
+        self
+    }
+
+    pub fn with_voxel<V>(mut self) -> Self where
+        V: 'static + AsVoxel,
+        V::Voxel: Raycast,
+    {
+        self.systems.push(Box::new(|builder| {
+            builder.add(crate::movement::MovementSystem::<V>::new(), "voxel_movement", &[])
+        }));
         self
     }
 }

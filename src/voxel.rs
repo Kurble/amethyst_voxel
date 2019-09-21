@@ -3,8 +3,6 @@ use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 use std::iter::FromIterator;
 
-use nalgebra_glm::*;
-
 use crate::coordinate::Pos;
 use crate::triangulate::*;
 use crate::ambient_occlusion::*;
@@ -49,9 +47,6 @@ pub trait Voxel<T: VoxelData>: 'static + Clone + Send + Sync {
 
     /// Triangulate this voxel to the mesh.
     fn triangulate_all<C: Context>(&self, mesh: &mut Mesh, ao: &AmbientOcclusion, context: &C, origin: Pos, scale: f32);
-
-    /// Perform hitdetect on this voxel. Returns whether the voxel was hit.
-    fn hit(&self, transform: Mat4, origin: Vec3, direction: Vec3) -> bool;
 
     /// Returns a child voxel where applicable
     fn child(&self, index: usize) -> Option<&Self::Child>;
@@ -157,153 +152,6 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Nested<T, U, V> {
         }
     }
 
-    /// Perform a hit detect on the voxel. If a voxel was hit, a tuple will be returned, containing:
-    /// - the index of the subvoxel that was hit
-    /// - a transformation representing the hit voxel
-    /// Arguments:
-    /// vox_to_world - the voxel to world matrix
-    /// origin - the origin of the ray
-    /// direction - the direction of the ray
-    pub fn hit_detect(&self,
-                      vox_to_world: Mat4,
-                      origin: Vec3,
-                      direction: Vec3
-    ) -> Option<(usize, Mat4)> {
-        // the current location being checked on the ray
-        // scales the origin so that we're in subvoxel space.
-        let transform = inverse(&vox_to_world);
-        let scale = (1 << T::SUBDIV) as f32;
-        let current_direction = transform.transform_vector(&direction);
-        let current = transform * vec4(origin[0], origin[1], origin[2], 1.0);
-        let mut current = vec4_to_vec3(&(current * scale));
-
-        // move the origin of the ray to the start of the box, but only if we're not inside the
-        //  box already.
-        for i in 0..3 {
-            let t = if current_direction[i] > 0.0 {
-                (0.0-current[i]) / current_direction[i]
-            } else {
-                ((1<<T::SUBDIV) as f32 - current[i]) / current_direction[i]
-            };
-            if t > 0.0 {
-                current += current_direction * t;
-            }
-        }
-
-        // keep the current location as integer coordinates, to mitigate rounding errors on
-        //  integrated values
-        let mut current_i = [current[0] as i64, current[1] as i64, current[2] as i64];
-        for i in 0..3 {
-            if (current[i].floor() - current[i]).abs() < std::f32::EPSILON && current_direction[i] < 0.0 {
-                current_i[i] -= 1;
-            }
-        }
-
-        // find nearest intersection with a 1d grid, with grid lines at all integer positions
-        let intersect = |position: f32, direction: f32| -> f32 {
-            if direction == 0.0 {
-                ::std::f32::INFINITY
-            } else {
-                let target = if direction < 0.0 {
-                    let t = position.floor();
-                    if (t - position).abs() < std::f32::EPSILON {
-                        t - 1.0
-                    } else {
-                        t
-                    }
-                } else {
-                    let t = position.ceil();
-                    if (t - position).abs() < std::f32::EPSILON {
-                        t + 1.0
-                    } else {
-                        t
-                    }
-                };
-
-                (target-position) / direction
-            }
-        };
-
-        // lambda that checks if we hit something
-        let hit = |[x, y, z]: [i64; 3]| -> Option<(usize, Mat4)>{
-            if x >= 0 && x < Const::<T>::WIDTH as i64 &&
-                y >= 0 && y < Const::<T>::WIDTH as i64 &&
-                z >= 0 && z < Const::<T>::WIDTH as i64 {
-                let i = x as usize + y as usize * Const::<T>::DY + z as usize * Const::<T>::DZ;
-                match self.get(i) {
-                    Some(voxel) => {
-                        if voxel.visible() {
-                            let sc = Const::<T>::SCALE;
-                            let s = scaling(&vec3(sc, sc, sc));
-                            let t = translation(&vec3(x as f32 * sc, y as f32 * sc, z as f32 * sc));
-                            let w = vox_to_world;
-                            if voxel.hit(w*t*s, origin, direction) {
-                                Some((i, transform))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    },
-                    None => None,
-                }
-            } else {
-                None
-            }
-        };
-
-        // first we'll find out the nearest block hit
-        for _ in 0..T::SUBDIV * 6 {
-            // try to find the nearest intersection with the grid
-            let i = vec3(
-                intersect(current[0], current_direction[0]),
-                intersect(current[1], current_direction[1]),
-                intersect(current[2], current_direction[2]),
-            );
-
-            // advance by the distance of the nearest intersection
-            for d in 0..3 {
-                let e = (d+1)%3;
-                let f = (d+2)%3;
-                if i[d] <= i[e] && i[d] <= i[f] {
-                    current += current_direction * i[d];
-                    if current_direction[d] < 0.0 {
-                        current_i[d] -= 1;
-                        current[d] = current_i[d] as f32;
-                        if let Some(hit) = hit(current_i) {
-                            return Some(hit);
-                        }
-                    } else {
-                        current_i[d] += 1;
-                        current[d] = current_i[d] as f32;
-                        if let Some(hit) = hit(current_i) {
-                            return Some(hit);
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        None
-    }
-
-    pub fn hit_get(&self,
-                   vox_to_world: Mat4,
-                   origin: Vec3,
-                   direction: Vec3) -> Option<(&V, Mat4)> {
-        self.hit_detect(vox_to_world, origin, direction)
-            .and_then(move |(i, transform)| self.get(i).map(|v| (v, transform)))
-    }
-
-    pub fn hit_get_mut(&mut self,
-                       vox_to_world: Mat4,
-                       origin: Vec3,
-                       direction: Vec3) -> Option<(&mut V, Mat4)> {
-        self.hit_detect(vox_to_world, origin, direction)
-            .and_then(move |(i, transform)| self.get_mut(i).map(|v| (v, transform)))
-    }
-
     pub fn get(&self, index: usize) -> Option<&V> {
         match *self {
             Nested::Empty { .. } => None,
@@ -355,14 +203,6 @@ impl Voxel<()> for Simple {
             triangulate_face::<(), Above>(mesh, ao, origin, scale, material);
             triangulate_face::<(), Back>(mesh, ao, origin, scale, material);
             triangulate_face::<(), Front>(mesh, ao, origin, scale, material);
-        }
-    }
-
-    fn hit(&self, _transform: Mat4, _origin: Vec3, _direction: Vec3) -> bool {
-        // todo: check if the voxel is missed entirely.
-        match *self {
-            Simple::Empty => false,
-            Simple::Material(_) => true,
         }
     }
 
@@ -434,18 +274,6 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Clone> Voxel<T> for Nested<T, U, 
         self.triangulate_self::<Above,C>(mesh, ao, context, origin, scale);
         self.triangulate_self::<Back,C>(mesh, ao, context, origin, scale);
         self.triangulate_self::<Front,C>(mesh, ao, context, origin, scale);
-    }
-
-    fn hit(&self, transform: Mat4, origin: Vec3, direction: Vec3) -> bool {
-        // todo check if we miss entirely
-        match *self {
-            Nested::Empty { .. } =>  return false,
-            Nested::Detail { .. } => (),
-            Nested::Material { .. } => return true,
-        };
-
-        self.hit_detect(transform, origin, direction)
-            .is_some()
     }
 
     fn child(&self, index: usize) -> Option<&Self::Child> {

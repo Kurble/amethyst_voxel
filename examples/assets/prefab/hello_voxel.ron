@@ -10,11 +10,11 @@ Prefab (
         (
             data: (
                 light: (
-                    ambient_color: ((0.3, 0.3, 0.3, 1.0)),
+                    ambient_color: ((0.2, 0.2, 0.2, 1.0)),
                     light: Directional((
                         color: Srgb(1.0, 1.0, 1.0),
-                        intensity: 0.9,
-                        direction: [-1.0, -1.0, -1.0],
+                        intensity: 1.0,
+                        direction: [0.8, -1.0, 0.8],
                     )),
                 ),
             ),
