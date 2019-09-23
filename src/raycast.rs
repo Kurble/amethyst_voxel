@@ -1,10 +1,10 @@
-use crate::world::MutableVoxelWorld;
+use crate::world::VoxelWorld;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::any::Any;
 use nalgebra_glm::*;
-use crate::voxel::*;
-use crate::triangulate::Const;
+use crate::voxel::{Voxel, Data, Const};
+use crate::triangulate::Triangulate;
 
 /// A ray that can be used to perform raycasting on a specific type that implements `Raycast`.
 /// The ray is not compatible with other `Raycast` implementations.
@@ -30,16 +30,19 @@ pub trait Raycast: Any + Sized {
     /// Cast a `Ray` on self, returning a ray that can be casted on the child type.
     fn cast(&self, ray: &Ray<Self>) -> Option<Ray<Self::Child>>;
 
+    /// Immutably retrieve the child for the casted ray.
     fn get(&self, ray: &Ray<Self::Child>) -> Option<&Self::Child>;
 
+    /// Mutably retrieve the child for the casted ray.
     fn get_mut(&mut self, ray: &Ray<Self::Child>) -> Option<&mut Self::Child>;
 
-    fn select<T: Any>(&self, ray: &Ray<Self>) -> Option<&T> {
-        if (self as &dyn Any).is::<T>() {
+    /// Get an immutable reference to a child voxel at a specific nesting depth by casting a ray.
+    fn select<T: Data>(&self, ray: &Ray<Self>, depth: usize) -> Option<&Voxel<T>> {
+        if depth == 0 {
             (self as &dyn Any).downcast_ref()
         } else if let Some(ray) = self.cast(ray) {
             if let Some(child) = self.get(&ray) {
-                child.select(&ray)
+                child.select(&ray, depth-1)
             } else {
                 None
             }
@@ -48,12 +51,13 @@ pub trait Raycast: Any + Sized {
         }
     }
 
-    fn select_mut<T: Any>(&mut self, ray: &Ray<Self>) -> Option<&mut T> {
-        if (self as &mut dyn Any).is::<T>() {
+    /// Get a mutable reference to a child voxel at a specific nesting depth by casting a ray.
+    fn select_mut<T: Data>(&mut self, ray: &Ray<Self>, depth: usize) -> Option<&mut Voxel<T>> {
+        if depth == 0 {
             (self as &mut dyn Any).downcast_mut()
         } else if let Some(ray) = self.cast(ray) {
             if let Some(child) = self.get_mut(&ray) {
-                child.select_mut(&ray)
+                child.select_mut(&ray, depth-1)
             } else {
                 None
             }
@@ -62,6 +66,7 @@ pub trait Raycast: Any + Sized {
         }
     }
 
+    /// Get the distance on the ray to the nearest hit.
     fn hit(&self, ray: &Ray<Self>) -> Option<f32> {
         self.cast(ray)
             .and_then(|ray| self
@@ -72,15 +77,14 @@ pub trait Raycast: Any + Sized {
 }
 
 impl<T: Raycast> Ray<T> {
+    /// Get the distance this ray has travelled until it hit something
     pub fn distance(&self) -> f32 {
         // todo
         0.0
     }
 }
 
-impl<V: 'static + AsVoxel> RaycastBase for MutableVoxelWorld<V> where
-    V::Voxel: Raycast
-{
+impl<V: Data> RaycastBase for VoxelWorld<V> {
     fn ray(&self, origin: Vec3, direction: Vec3) -> Ray<Self> {
         Ray {
             origin,
@@ -92,10 +96,8 @@ impl<V: 'static + AsVoxel> RaycastBase for MutableVoxelWorld<V> where
     }
 }
 
-impl<V: 'static + AsVoxel> Raycast for MutableVoxelWorld<V> where
-    V::Voxel: Raycast
-{
-    type Child = V::Voxel;
+impl<V: Data> Raycast for VoxelWorld<V> {
+    type Child = Voxel<V>;
 
     fn cast(&self, ray: &Ray<Self>) -> Option<Ray<Self::Child>> {
         // the current location being checked on the ray
@@ -197,31 +199,10 @@ impl<V: 'static + AsVoxel> Raycast for MutableVoxelWorld<V> where
     }
 }
 
-impl Raycast for Simple {
-    type Child = Simple;
+impl<T: Data> Raycast for Voxel<T> {
+    type Child = Self;
 
-    fn cast(&self, ray: &Ray<Simple>) -> Option<Ray<Simple>> {
-        match *self {
-            Simple::Empty => None,
-            Simple::Material(_) => Some(Ray {
-                transform: ray.transform,
-                origin: ray.origin,
-                direction: ray.direction,
-                index: None,
-                marker: PhantomData,
-            }),
-        }
-    }
-
-    fn get(&self, _: &Ray<Simple>) -> Option<&Self::Child> { None }
-
-    fn get_mut(&mut self, _: &Ray<Simple>) -> Option<&mut Self::Child> { None }
-}
-
-impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Raycast> Raycast for Nested<T, U, V> {
-    type Child = V;
-
-    fn cast(&self, ray: &Ray<Self>) -> Option<Ray<V>> {
+    fn cast(&self, ray: &Ray<Self>) -> Option<Ray<Self>> {
         // the current location being checked on the ray
         // scales the origin so that we're in subvoxel space.
         let transform = inverse(&ray.transform);
@@ -253,7 +234,7 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Raycast> Raycast for Nested<T, U,
         }
 
         // lambda that checks if we hit something
-        let hit = |[x, y, z]: [i64; 3]| -> Option<Ray<V>>{
+        let hit = |[x, y, z]: [i64; 3]| -> Option<Ray<Self>>{
             if x >= 0 && x < Const::<T>::WIDTH as i64 &&
                 y >= 0 && y < Const::<T>::WIDTH as i64 &&
                 z >= 0 && z < Const::<T>::WIDTH as i64 {
@@ -327,11 +308,11 @@ impl<T: VoxelData, U: VoxelData, V: Voxel<U> + Raycast> Raycast for Nested<T, U,
         None
     }
 
-    fn get(&self, ray: &Ray<V>) -> Option<&V> { 
+    fn get(&self, ray: &Ray<Self>) -> Option<&Self> { 
         ray.index.and_then(move |index| self.get(index))
     }
 
-    fn get_mut(&mut self, ray: &Ray<V>) -> Option<&mut V> { 
+    fn get_mut(&mut self, ray: &Ray<Self>) -> Option<&mut Self> { 
         ray.index.and_then(move |index| self.get_mut(index))
     }
 }

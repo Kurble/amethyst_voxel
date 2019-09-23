@@ -5,9 +5,9 @@ use amethyst::{
 };
 use nalgebra_glm::*;
 use crate::{
-	voxel::AsVoxel,
-	world::MutableVoxelWorld,
-	collision::*,
+	voxel::{Data, Voxel},
+	world::VoxelWorld,
+	raycast::*,
 };
 
 pub struct Pos { 
@@ -15,7 +15,7 @@ pub struct Pos {
 	pub velocity: Vec3,
 }
 
-pub struct MovementSystem<V: AsVoxel> {
+pub struct MovementSystem<V: Data> {
 	marker: PhantomData<V>,
 }
 
@@ -23,7 +23,7 @@ impl Component for Pos {
 	type Storage = DenseVecStorage<Self>;
 }
 
-impl<V: AsVoxel> MovementSystem<V> {
+impl<V: Data> MovementSystem<V> {
 	pub fn new() -> Self {
 		Self {
 			marker: PhantomData,
@@ -31,9 +31,9 @@ impl<V: AsVoxel> MovementSystem<V> {
 	}
 }
 
-impl<'a, V: 'static + AsVoxel> System<'a> for MovementSystem<V> where V::Voxel: Raycast {
+impl<'a, V: Data> System<'a> for MovementSystem<V> where Voxel<V>: Raycast {
 	type SystemData = (
-		ReadStorage<'a, MutableVoxelWorld<V>>,
+		ReadStorage<'a, VoxelWorld<V>>,
 		WriteStorage<'a, Pos>,
 		WriteStorage<'a, Transform>,
 	);

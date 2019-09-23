@@ -18,19 +18,27 @@ use amethyst::{
     },
 };
 
-/// A material
+/// A material. For a better explanation of the properties, 
+/// take a look at the amethyst PBR model.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VoxelMaterial {
+    /// The diffuse albedo of the material
     pub albedo: [u8; 3],
+    /// Emissive color of the material
     pub emission: [u8; 3],
+    /// Alpha blending factor of the material (unused for now)
     pub alpha: u8,
+    /// The metallic factor of the material
     pub metallic: u8,
+    /// The roughness factor of the material
     pub roughness: u8,
 }
 
+/// A material id issued by the `VoxelMaterialStorage`.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct VoxelMaterialId(pub(crate) u32);
 
+/// A storage resource for `VoxelMaterial`s.
 pub struct VoxelMaterialStorage {
     materials: Vec<VoxelMaterial>,
     size: usize,
@@ -38,9 +46,12 @@ pub struct VoxelMaterialStorage {
     handle: Option<Handle<Material>>,
 }
 
+/// System that manages the `VoxelMaterialStorage`.
 pub struct VoxelMaterialSystem;
 
 impl VoxelMaterialStorage {
+    /// Create a new material. 
+    /// If an identical material already exists, it's ID will be returned instead.
     pub fn create(&mut self, material: VoxelMaterial) -> VoxelMaterialId {
         let result = self.materials
             .iter()

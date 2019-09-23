@@ -1,85 +1,74 @@
-use std::marker::PhantomData;
-
-use crate::world::MutableVoxelWorld;
-use crate::triangulate::*;
-use crate::voxel::*;
+use crate::world::VoxelWorld;
+use crate::triangulate::Triangulate;
+use crate::voxel::{Voxel, Data, Const};
 
 /// Trait for retrieving neighbour information between separate root voxels.
-pub trait Context: Clone {
-    type Child: Context;
-
-    /// Same as Voxel::visible, but accepts a relative coordinate for selecting a child voxel.
+pub trait Context<T: Data> {
+    /// Same as Triangulate::visible, but accepts a relative coordinate for selecting a child voxel.
     fn visible(&self, x: isize, y: isize, z: isize) -> bool;
 
-    /// Same as Voxel::render, but accepts a relative coordinate for selecting a child voxel.
+    /// Same as Triangulate::render, but accepts a relative coordinate for selecting a child voxel.
     fn render(&self, x: isize, y: isize, z: isize) -> bool;
 
     /// Returns a Context for the child at the relative coordinate
-    fn child(self, x: isize, y: isize, z: isize) -> Self::Child;
+    fn child<'a>(&'a self, x: isize, y: isize, z: isize) -> DetailContext<'a, T>;
 }
 
 /// Context sampling no neighbours at all.
-pub struct VoxelContext<'a, T: VoxelData, V: Voxel<T>>(&'a V, PhantomData<T>);
+pub struct VoxelContext<'a, T: Data> {
+    voxel: &'a Voxel<T>
+}
 
 /// Context sampling the inner details of a voxel. Neighbours resolve through the parent Context.
-pub struct DetailContext<'a, T: VoxelData, V: Voxel<T>, P: Context<Child=Self>> {
-    parent: P,
+pub struct DetailContext<'a, T: Data> {
+    parent: &'a dyn Context<T>,
     coord: [isize; 3],
-    voxel: Option<&'a V>,
-    phantom: PhantomData<T>,
+    voxel: Option<&'a Voxel<T>>,
 }
 
-pub struct WorldContext<'a, V: AsVoxel> {
+/// Context sampling the chunks of a world.
+pub struct WorldContext<'a, V: Data> {
     coord: [isize; 3], 
-    world: &'a MutableVoxelWorld<V>,
+    world: &'a VoxelWorld<V>,
 }
 
-impl<'a, V: Voxel<T>, T: VoxelData> VoxelContext<'a, T, V> {
-    pub fn new(voxel: &'a V) -> Self {
-        Self(voxel, PhantomData)
+impl<'a, T: Data> VoxelContext<'a, T> {
+    pub fn new(voxel: &'a Voxel<T>) -> Self {
+        Self { voxel }
     }
 }
 
-impl<'a, V: Voxel<T>, T: VoxelData> Clone for VoxelContext<'a, T, V> {
-    fn clone(&self) -> Self {
-        Self(self.0, PhantomData)
-    }
-}
-
-impl<'a, V: Voxel<T>, T: VoxelData> Context for VoxelContext<'a, T, V> {
-    type Child = DetailContext<'a, V::ChildData, V::Child, Self>;
-
+impl<'a, T: Data> Context<T> for VoxelContext<'a, T> {
     fn visible(&self, _: isize, _: isize, _: isize) -> bool { false }
 
     fn render(&self, _: isize, _: isize, _: isize) -> bool { false }
 
-    fn child(self, x: isize, y: isize, z: isize) -> DetailContext<'a, V::ChildData, V::Child, Self> { 
+    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, T> { 
         if x >= 0 && x < Const::<T>::WIDTH as isize &&
            y >= 0 && y < Const::<T>::WIDTH as isize &&
            z >= 0 && z < Const::<T>::WIDTH as isize {
             let index = Const::<T>::coord_to_index(x as usize, y as usize, z as usize);
-            DetailContext::new(self.clone(), [x, y, z], self.0.child(index))
+            DetailContext::new(self, [x, y, z], self.voxel.get(index))
         } else {
-            DetailContext::new(self.clone(), [x, y, z], None)
+            DetailContext::new(self, [x, y, z], None)
         }
     }
 }
 
-impl<'a, T: VoxelData, V: Voxel<T>, P: Context<Child=Self>> DetailContext<'a, T, V, P> {
-    pub fn new(parent: P, coord: [isize; 3], voxel: Option<&'a V>) -> Self {
+impl<'a, T: Data> DetailContext<'a, T> {
+    pub fn new(parent: &'a dyn Context<T>, coord: [isize; 3], voxel: Option<&'a Voxel<T>>) -> Self {
         Self {
             parent,
             coord,
             voxel,
-            phantom: PhantomData,
         }
     }
 
-    fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a V::Child> {
+    fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a Voxel<T>> {
         let size = Const::<T>::WIDTH as isize;
         let coord = [x, y, z];
         if (0..3).fold(true, |b, i| b && coord[i] >= 0 && coord[i] < size) {
-            self.voxel.and_then(|v| v.child(
+            self.voxel.and_then(|v| v.get(
                 x as usize * Const::<T>::DX +
                 y as usize * Const::<T>::DY +
                 z as usize * Const::<T>::DZ))
@@ -99,20 +88,7 @@ impl<'a, T: VoxelData, V: Voxel<T>, P: Context<Child=Self>> DetailContext<'a, T,
     }
 }
 
-impl<'a, T: VoxelData, V: Voxel<T>, P: Context<Child=Self>> Clone for DetailContext<'a, T, V, P> {
-    fn clone(&self) -> Self {
-        DetailContext {
-            parent: self.parent.clone(),
-            coord: self.coord,
-            voxel: self.voxel,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<'a, T: VoxelData, V: Voxel<T>, P: Context<Child=Self>> Context for DetailContext<'a, T, V, P> {
-    type Child = DetailContext<'a, V::ChildData, V::Child, Self>;
-
+impl<'a, T: Data> Context<T> for DetailContext<'a, T> {
     fn visible(&self, x: isize, y: isize, z: isize) -> bool { 
         self.find(x, y, z).map(|v| v.visible()).unwrap_or(false)
     }
@@ -121,32 +97,21 @@ impl<'a, T: VoxelData, V: Voxel<T>, P: Context<Child=Self>> Context for DetailCo
         self.find(x, y, z).map(|v| v.render()).unwrap_or(false) 
     }
 
-    fn child(self, x: isize, y: isize, z: isize) -> Self::Child { 
-        DetailContext::new(self.clone(), [x, y, z], self.find(x, y, z))
+    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, T> { 
+        DetailContext::new(self, [x, y, z], self.find(x, y, z))
     }
 }
 
-impl<'a, V: AsVoxel> WorldContext<'a, V> {
-    pub fn new(coord: [isize; 3], world: &'a MutableVoxelWorld<V>) -> Self {
+impl<'a, V: Data> WorldContext<'a, V> {
+    pub fn new(coord: [isize; 3], world: &'a VoxelWorld<V>) -> Self {
         Self {
             coord,
             world,
         }
     }
-}
 
-impl<'a, V: AsVoxel> Clone for WorldContext<'a, V> {
-    fn clone(&self) -> Self {
-        WorldContext{
-            coord: self.coord,
-            world: self.world,
-        }
-    }
-}
-
-impl<'a, V: AsVoxel> WorldContext<'a, V> {
-    fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a <V::Voxel as Voxel<V::Data>>::Child> {
-        let size = Const::<V::Data>::WIDTH as isize;
+    fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a Voxel<V>> {
+        let size = Const::<V>::WIDTH as isize;
         let grid = |x| if x >= 0 { x / size } else { (x+1) / size - 1};
         let coord = [self.coord[0]+grid(x), self.coord[1]+grid(y), self.coord[2]+grid(z)];
         
@@ -156,10 +121,10 @@ impl<'a, V: AsVoxel> WorldContext<'a, V> {
                 coord[2] as usize * self.world.dims[0] * self.world.dims[1];
             if let Some(voxel) = self.world.data[index].get() {
                 let grid_mod = |x: isize| if x%size >= 0 { x%size } else { x%size + size } as usize;
-                voxel.child(
-                    grid_mod(x)*Const::<V::Data>::DX + 
-                    grid_mod(y)*Const::<V::Data>::DY + 
-                    grid_mod(z)*Const::<V::Data>::DZ)
+                voxel.get(
+                    grid_mod(x)*Const::<V>::DX + 
+                    grid_mod(y)*Const::<V>::DY + 
+                    grid_mod(z)*Const::<V>::DZ)
             } else {
                 None
             }
@@ -169,9 +134,7 @@ impl<'a, V: AsVoxel> WorldContext<'a, V> {
     }
 }
 
-impl<'a, V: AsVoxel> Context for WorldContext<'a, V> {
-    type Child = DetailContext<'a, <V::Voxel as Voxel<V::Data>>::ChildData, <V::Voxel as Voxel<V::Data>>::Child, Self>;
-
+impl<'a, V: Data> Context<V> for WorldContext<'a, V> {
     fn visible(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|c| c.visible()).unwrap_or(false)
     }
@@ -180,8 +143,8 @@ impl<'a, V: AsVoxel> Context for WorldContext<'a, V> {
         self.find(x, y, z).map(|c| c.render()).unwrap_or(false)
     }
 
-    fn child(self, x: isize, y: isize, z: isize) -> Self::Child {
-        DetailContext::new(self.clone(), [x, y, z], self.find(x, y, z))
+    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, V> {
+        DetailContext::new(self, [x, y, z], self.find(x, y, z))
     }
 }
 

@@ -1,6 +1,6 @@
-use crate::voxel::AsVoxel;
+use crate::voxel::Data;
 use crate::pass::*;
-use crate::ambient_occlusion::*;
+
 use amethyst::{
     renderer::{
         bundle::{RenderOrder, RenderPlan, RenderPlugin, Target},
@@ -12,16 +12,16 @@ use amethyst::{
 };
 use rendy::graph::render::RenderGroupDesc;
 
-/// A `RenderPlugin` for forward rendering of 3d objects.
+/// A `RenderPlugin` for forward rendering of 3d voxels.
 /// Generic over 3d pass rendering method.
 #[derive(derivative::Derivative)]
 #[derivative(Default(bound = ""), Debug(bound = ""))]
-pub struct RenderVoxel<D: Base3DPassDef, V: AsVoxel> {
+pub struct RenderVoxel<D: Base3DPassDef, V: Data> {
     target: Target,
     marker: std::marker::PhantomData<(D, V)>,
 }
 
-impl<D: Base3DPassDef, V: AsVoxel> RenderVoxel<D, V> {
+impl<D: Base3DPassDef, V: Data> RenderVoxel<D, V> {
     /// Set target to which 3d meshes will be rendered.
     pub fn with_target(mut self, target: Target) -> Self {
         self.target = target;
@@ -29,11 +29,10 @@ impl<D: Base3DPassDef, V: AsVoxel> RenderVoxel<D, V> {
     }
 }
 
-impl<'ao, B, D, V> RenderPlugin<B> for RenderVoxel<D, V> where
+impl<B, D, V> RenderPlugin<B> for RenderVoxel<D, V> where
     B: Backend,
     D: Base3DPassDef,
-    V: 'static + AsVoxel,
-    AmbientOcclusion<'ao>: BuildAmbientOcclusion<'ao, <V as AsVoxel>::Data, <V as AsVoxel>::Voxel>, 
+    V: Data,
 {
     fn on_build<'a, 'b>(
         &mut self,

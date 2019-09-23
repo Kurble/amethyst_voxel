@@ -3,19 +3,20 @@ use std::sync::Arc;
 use byteorder::*;
 use amethyst::assets::{Format};
 use crate::{
-    model::VoxelModelData,
+    model::ModelData,
     material::{VoxelMaterial},
 };
 
 type E = LittleEndian;
 
+/// MagicaVoxel .vox format.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VoxFormat;
 
-impl Format<VoxelModelData> for VoxFormat {
+impl Format<ModelData> for VoxFormat {
     fn name(&self) -> &'static str { "MagicaVoxel" }
 
-    fn import_simple(&self, bytes: Vec<u8>) -> amethyst::Result<VoxelModelData> {
+    fn import_simple(&self, bytes: Vec<u8>) -> amethyst::Result<ModelData> {
         let val = load_vox(bytes.as_slice())
             .unwrap()
             .into_iter()
@@ -25,7 +26,7 @@ impl Format<VoxelModelData> for VoxFormat {
     }
 }
 
-fn load_vox<R>(mut reader: R) -> Result<Vec<VoxelModelData>> where
+fn load_vox<R>(mut reader: R) -> Result<Vec<ModelData>> where
     R: ReadBytesExt,
 {
     // Read the vox file header and check if the version is supported.
@@ -147,7 +148,7 @@ fn load_vox<R>(mut reader: R) -> Result<Vec<VoxelModelData>> where
         .into_iter()
         .zip(voxels)
         .map(|(size, voxels)| {
-            VoxelModelData::new(
+            ModelData::new(
                 materials.clone(),
                 voxels.into_iter().map(|(x, y, z, i)| {
                     let index = x as usize + 

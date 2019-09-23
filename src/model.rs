@@ -7,8 +7,7 @@ use amethyst::{
 };
 use crate::{
     material::{VoxelMaterial, VoxelMaterialId, VoxelMaterialStorage},
-    voxel::{AsVoxel, Voxel},
-    triangulate::{Const},
+    voxel::{Data, Voxel, Const},
     world::*,
 };
 use std::sync::{Arc, Mutex};
@@ -16,26 +15,35 @@ use std::iter::repeat;
 
 use futures::{Future, Async};
 
-pub struct VoxelModelData {
+/// Data type for the `Model` asset.
+pub struct ModelData {
     materials: Arc<[VoxelMaterial]>,
     voxels: Vec<(usize, usize)>,
     dimensions: [usize; 3],
 }
 
-pub struct VoxelModel {
+/// A predefined model of voxels.
+pub struct Model {
     pub voxels: Vec<Option<VoxelMaterialId>>,
     pub dimensions: [usize; 3],
 }
 
-pub struct VoxelModelSource {
-    handle: Handle<VoxelModel>,
-    requests: Vec<Box<dyn FnOnce(&VoxelModel)+Send+Sync>>,
+/// A `VoxelSource` that loads chunks from a `Model`.
+pub struct ModelSource {
+    handle: Handle<Model>,
+    requests: Vec<Box<dyn FnOnce(&Model)+Send+Sync>>,
     limits: Limits,
 }
 
-pub struct VoxelModelProcessor;
+pub struct ModelProcessor;
 
-impl VoxelModelData {
+impl ModelData {
+    /// Create new `ModelData` from raw parst:
+    /// materials: a shared arc slice of materials.
+    /// voxels: a list of voxels in the format (index, material). 
+    ///         the index references the index within the dimensions. 
+    ///         the material references to an index in the materials slice.
+    /// dimensions: the three dimensional size of the model. 
     pub fn new(materials: Arc<[VoxelMaterial]>, voxels: Vec<(usize, usize)>, dimensions: [usize; 3]) -> Self {
         Self {
             materials,
@@ -45,16 +53,16 @@ impl VoxelModelData {
     }
 }
 
-impl Asset for VoxelModel {
-    const NAME: &'static str = "amethyst_voxel::VoxelModel";
+impl Asset for Model {
+    const NAME: &'static str = "amethyst_voxel::Model";
     
-    type Data = VoxelModelData;
-    type HandleStorage = VecStorage<Handle<VoxelModel>>;
+    type Data = ModelData;
+    type HandleStorage = VecStorage<Handle<Model>>;
 }
 
-impl<'a> System<'a> for VoxelModelProcessor {
+impl<'a> System<'a> for ModelProcessor {
     type SystemData = (
-        Write<'a, AssetStorage<VoxelModel>>,
+        Write<'a, AssetStorage<Model>>,
         Read<'a, Time>,
         ReadExpect<'a, ArcThreadPool>,
         Option<Read<'a, HotReloadStrategy>>,
@@ -83,7 +91,7 @@ impl<'a> System<'a> for VoxelModelProcessor {
                     voxels[x+y*b.dimensions[0]+z*b.dimensions[2]*b.dimensions[0]] = Some(materials[material]);
                 }
 
-                Ok(ProcessingState::Loaded(VoxelModel {
+                Ok(ProcessingState::Loaded(Model {
                     voxels,
                     dimensions: [b.dimensions[0], b.dimensions[2], b.dimensions[1]],
                 }))
@@ -95,8 +103,8 @@ impl<'a> System<'a> for VoxelModelProcessor {
     }
 }
 
-impl VoxelModelSource {
-    pub fn new(handle: Handle<VoxelModel>) -> Self {
+impl ModelSource {
+    pub fn new(handle: Handle<Model>) -> Self {
         Self {
             handle,
             requests: Vec::new(),
@@ -105,21 +113,20 @@ impl VoxelModelSource {
     }
 }
 
-impl Component for VoxelModelSource {
-    type Storage = DenseVecStorage<VoxelModelSource>;
+impl Component for ModelSource {
+    type Storage = DenseVecStorage<ModelSource>;
 }
 
-impl<'a, V> Source<'a, V> for VoxelModelSource where
-    V: 'static + AsVoxel,
-    V::Data: Default,
-    <V::Voxel as Voxel<V::Data>>::Child: From<VoxelMaterialId>,
-    <V::Voxel as Voxel<V::Data>>::Child: Default,
+impl<'a, V> VoxelSource<'a, V> for ModelSource where
+    V: Data + Default,
+    Voxel<V>: From<VoxelMaterialId>,
+    Voxel<V>: Default,
 {
-    type SystemData = Read<'a, AssetStorage<VoxelModel>>;
+    type SystemData = Read<'a, AssetStorage<Model>>;
 
     fn process(&mut self, models: &mut Self::SystemData) {
         if let Some(model) = models.get(&self.handle) {
-            let w = Const::<V::Data>::WIDTH as isize;
+            let w = Const::<V>::WIDTH as isize;
             for i in 0..3 {
                 let d = model.dimensions[i] as isize;
                 self.limits.to[i] = Some(if d%w == 0 { d/w - 1 } else { d/w });
@@ -139,7 +146,7 @@ impl<'a, V> Source<'a, V> for VoxelModelSource where
 
         self.requests.push(Box::new(move |model| {
             if let Ok(mut guard) = handle.lock() {
-                let w = Const::<V::Data>::WIDTH as isize;
+                let w = Const::<V>::WIDTH as isize;
                 
                 let mut from = [0, 0, 0];
                 let mut to = [0, 0, 0];
@@ -153,8 +160,8 @@ impl<'a, V> Source<'a, V> for VoxelModelSource where
                     }
                 }
 
-                let iter = (0..Const::<V::Data>::COUNT).map(|i| {
-                    let (x, y, z) = Const::<V::Data>::index_to_coord(i);
+                let iter = (0..Const::<V>::COUNT).map(|i| {
+                    let (x, y, z) = Const::<V>::index_to_coord(i);
                     if x < range[0] && y < range[1] && z < range[2] {
                         let x = from[0]+x;
                         let y = from[1]+y;
@@ -168,14 +175,14 @@ impl<'a, V> Source<'a, V> for VoxelModelSource where
                     }
                 });
 
-                *guard = Some(<V as AsVoxel>::Voxel::from_iter(Default::default(), iter));
+                *guard = Some(Voxel::from_iter(Default::default(), iter));
             }
         }));
         
         Box::new(load)
     }
 
-    fn drop(&mut self, _: [isize; 3], _: V::Voxel) {
+    fn drop(&mut self, _: [isize; 3], _: Voxel<V>) {
         // do nothing
     }
 
@@ -184,15 +191,15 @@ impl<'a, V> Source<'a, V> for VoxelModelSource where
     }
 }
 
-struct Load<V: AsVoxel> {
-    handle: Arc<Mutex<Option<V::Voxel>>>,
+struct Load<V: Data> {
+    handle: Arc<Mutex<Option<Voxel<V>>>>,
 }
 
-impl<V: AsVoxel> Future for Load<V> {
-    type Item = V::Voxel;
+impl<V: Data> Future for Load<V> {
+    type Item = Voxel<V>;
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
-    fn poll(&mut self) -> Result<Async<V::Voxel>, Self::Error> {
+    fn poll(&mut self) -> Result<Async<Voxel<V>>, Self::Error> {
         let mut guard = self.handle.lock().unwrap();
 
         match guard.take() {

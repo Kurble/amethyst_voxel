@@ -4,11 +4,13 @@ use amethyst::{
     error::Error,
 };
 use crate::{
-    voxel::{AsVoxel},
-    world::Source,
-    collision::Raycast,
+    voxel::Data,
+    world::VoxelSource,
 };
 
+/// Main bundle for supporting voxels in your amethyst project.
+/// Before any `Voxel<T>` type will work, 
+///  you have to specify which `Data` and `Source` implementations you plan to use.
 #[derive(Default)]
 pub struct VoxelBundle {
     systems: Vec<Box<dyn for<'a, 'b> FnOnce(&mut DispatcherBuilder<'a, 'b>)>>,
@@ -21,20 +23,19 @@ impl VoxelBundle {
         }
     }
 
+    /// Configure systems that load voxels with `Data` `V` from the source `S`.
     pub fn with_source<V, S>(mut self) -> Self where
-        V: 'static + AsVoxel, 
-        S: for<'s> Source<'s, V> + Component + Send + Sync
+        V: Data, 
+        S: for<'s> VoxelSource<'s, V> + Component + Send + Sync
     {
         self.systems.push(Box::new(|builder| builder.add(
-            crate::world::WorldSourceSystem::<V, S>::new(), "world_sourcing", &[]
+            crate::world::WorldSystem::<V, S>::new(), "world_sourcing", &[]
         )));
         self
     }
 
-    pub fn with_voxel<V>(mut self) -> Self where
-        V: 'static + AsVoxel,
-        V::Voxel: Raycast,
-    {
+    /// Configure systems that work with `Data` `V`.
+    pub fn with_voxel<V: Data>(mut self) -> Self {
         self.systems.push(Box::new(|builder| {
             builder.add(crate::movement::MovementSystem::<V>::new(), "voxel_movement", &[])
         }));
@@ -48,7 +49,7 @@ impl<'a, 'b> SystemBundle<'a, 'b> for VoxelBundle {
         builder: &mut DispatcherBuilder<'a, 'b>,
     ) -> Result<(), Error> {
         builder.add(crate::material::VoxelMaterialSystem, "voxel_material_system", &[]);
-        builder.add(crate::model::VoxelModelProcessor, "voxel_model_processor", &[]);
+        builder.add(crate::model::ModelProcessor, "voxel_model_processor", &[]);
         for sys in self.systems.into_iter() {
             sys(builder);
         }

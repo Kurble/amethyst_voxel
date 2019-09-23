@@ -30,23 +30,23 @@ use rendy::{
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use crate::{
-    voxel::{AsVoxel},
+    voxel::Data,
     context::{Context, VoxelContext, WorldContext},
-    world::{MutableVoxelWorld, MutableVoxel, Chunk},
-    coordinate::Pos,
+    world::{VoxelWorld, VoxelRender, Chunk},
     material::VoxelMaterialStorage,
     ambient_occlusion::*,
 };
+use nalgebra_glm::*;
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug(bound = ""), Default(bound = ""))]
-pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef, V: AsVoxel> {
+pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef, V: Data> {
     marker: PhantomData<(B, D, V)>,
 }
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: AsVoxel> {
+pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: Data> {
     pipeline_basic: B::GraphicsPipeline,
     pipeline_layout: B::PipelineLayout,
     static_batches: TwoLevelBatch<MaterialId, usize, SmallVec<[VertexArgs; 4]>>,
@@ -62,7 +62,7 @@ pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: AsVoxel> {
 #[derive(Debug)]
 pub struct VoxelPassDef<T: Base3DPassDef>(PhantomData<T>);
 
-impl<B: Backend, T: Base3DPassDef, V: AsVoxel> DrawVoxelDesc<B, T, V> {
+impl<B: Backend, T: Base3DPassDef, V: Data> DrawVoxelDesc<B, T, V> {
     pub fn new() -> Self {
         Self {
         	marker: PhantomData,
@@ -73,8 +73,7 @@ impl<B: Backend, T: Base3DPassDef, V: AsVoxel> DrawVoxelDesc<B, T, V> {
 impl<'a, B, T, V> RenderGroupDesc<B, Resources> for DrawVoxelDesc<B, T, V> where
     B: Backend,
     T: Base3DPassDef,
-    V: 'static + AsVoxel,
-    AmbientOcclusion<'a>: BuildAmbientOcclusion<'a, <V as AsVoxel>::Data, <V as AsVoxel>::Voxel>, 
+    V: Data,
 {
     fn build(
         self,
@@ -130,7 +129,7 @@ impl<'a, B, T, V> RenderGroupDesc<B, Resources> for DrawVoxelDesc<B, T, V> where
 }
 
 impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
-    const NAME: &'static str = "Voxel";
+    const NAME: &'static str = "Triangulate";
     type TextureSet = T::TextureSet;
 
     fn vertex_shader() -> &'static SpirvShader {
@@ -164,8 +163,7 @@ impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
 impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
     B: Backend,
     T: Base3DPassDef,
-    V: 'static + AsVoxel,
-    AmbientOcclusion<'a>: BuildAmbientOcclusion<'a, <V as AsVoxel>::Data, <V as AsVoxel>::Voxel>, 
+    V: Data,
 {
     fn prepare(
         &mut self,
@@ -183,8 +181,8 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
             transforms,
             tints,
         ) = <(
-            WriteStorage<'_, MutableVoxel<V>>,
-            WriteStorage<'_, MutableVoxelWorld<V>>,
+            WriteStorage<'_, VoxelRender<V>>,
+            WriteStorage<'_, VoxelWorld<V>>,
             Read<'_, VoxelMaterialStorage>,
             ReadStorage<'_, Transform>,
             ReadStorage<'_, Tint>,
@@ -210,7 +208,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                     };
 
                     if mesh.dirty {
-                        let pos = Pos::new(0.0, 0.0, 0.0);
+                        let pos = vec3(0.0, 0.0, 0.0);
                         let scale = 16.0;
                         let new_mesh = build_mesh(&mesh, VoxelContext::new(&mesh.data), pos, scale, &materials, queue, factory);
 
@@ -258,7 +256,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                             let y = ((i / (world.dims[0])) % world.dims[1]) as isize;
                             let z = ((i / (world.dims[0]*world.dims[1])) % world.dims[2]) as isize;
                             let scale = world.scale;
-                            let pos = Pos::new(
+                            let pos = vec3(
                                 (x + world.origin[0]) as f32 * scale, 
                                 (y + world.origin[1]) as f32 * scale, 
                                 (z + world.origin[2]) as f32 * scale
@@ -356,18 +354,17 @@ lazy_static::lazy_static! {
 }
 
 fn build_mesh<'a, B, V, C>(
-    voxel: &MutableVoxel<V>, 
+    voxel: &VoxelRender<V>, 
     context: C, 
-    pos: Pos, 
+    pos: Vec3, 
     scale: f32, 
     materials: &VoxelMaterialStorage,
     queue: QueueId, 
     factory: &Factory<B>
 ) -> Option<Mesh> where
     B: Backend, 
-    V: AsVoxel, 
-    C: Context,
-    AmbientOcclusion<'a>: BuildAmbientOcclusion<'a, <V as AsVoxel>::Data, <V as AsVoxel>::Voxel>
+    V: Data, 
+    C: Context<V>,
 {
     let ao = AmbientOcclusion::build(&voxel.data, &context);
 

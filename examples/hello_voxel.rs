@@ -2,10 +2,7 @@ use amethyst::prelude::*;
 use amethyst::{
     ecs::prelude::*,
 	assets::{PrefabLoader, PrefabLoaderSystem, RonFormat},
-	core::{
-        //shrev::{EventChannel, ReaderId},
-        transform::{TransformBundle, Transform},
-    },
+	core::transform::{TransformBundle, Transform},
     window::{ScreenDimensions},
     controls::{FlyControlBundle},
 	renderer::{
@@ -35,7 +32,7 @@ type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>)
 #[derive(Clone, Default)]
 pub struct ExampleVoxel;
 
-impl VoxelData for ExampleVoxel {
+impl Data for ExampleVoxel {
     const SUBDIV: usize = 4;
 }
 
@@ -53,8 +50,8 @@ impl Example {
 
 impl SimpleState for Example {
     fn on_start(&mut self, data: StateData<GameData>) {
-        data.world.register::<MutableVoxel<ExampleVoxel>>();
-        data.world.register::<MutableVoxelWorld<ExampleVoxel>>();
+        data.world.register::<VoxelRender<ExampleVoxel>>();
+        data.world.register::<VoxelWorld<ExampleVoxel>>();
 
         let prefab_handle = data.world.exec(|loader: PrefabLoader<'_, MyPrefabData>| {
             loader.load("prefab/hello_voxel.ron", RonFormat, ())
@@ -67,13 +64,13 @@ impl SimpleState for Example {
                 "vox/monu9.vox",
                 VoxFormat,
                 (),
-                &data.world.read_resource::<amethyst::assets::AssetStorage<VoxelModel>>(),
+                &data.world.read_resource::<amethyst::assets::AssetStorage<Model>>(),
             )
         };
 
-        let world = MutableVoxelWorld::<ExampleVoxel>::new([12, 8, 12], 16.0);
+        let world = VoxelWorld::<ExampleVoxel>::new([12, 8, 12], 16.0);
 
-        let source = VoxelModelSource::new(model_handle);
+        let source = ModelSource::new(model_handle);
 
         self.voxels = Some(data.world
             .create_entity()
@@ -93,7 +90,7 @@ impl SimpleState for Example {
                 Trans::Quit
             } else if is_mouse_button_down(&event, MouseButton::Left) {
 
-                let mut store = state.world.write_storage::<MutableVoxelWorld<ExampleVoxel>>();
+                let mut store = state.world.write_storage::<VoxelWorld<ExampleVoxel>>();
                 let screen = state.world.read_resource::<ScreenDimensions>();
                 let active_camera = state.world.read_resource::<ActiveCamera>();
                 let cameras = state.world.read_storage::<Camera>();
@@ -121,8 +118,8 @@ impl SimpleState for Example {
                 let voxels = store.get_mut(self.voxels.unwrap()).unwrap();
 
                 let ray = voxels.ray(origin, direction);
-                if let Some(voxel) = voxels.select_mut::<Simple>(&ray) {
-                    replace(voxel, Simple::Empty);
+                if let Some(voxel) = voxels.select_mut::<ExampleVoxel>(&ray, 2) {
+                    replace(voxel, Voxel::default());
                 }
 
                 Trans::None
@@ -164,7 +161,7 @@ fn main() -> amethyst::Result<()> {
         )?
     	.with_bundle(VoxelBundle::new()
             .with_voxel::<ExampleVoxel>()
-            .with_source::<ExampleVoxel, VoxelModelSource>()
+            .with_source::<ExampleVoxel, ModelSource>()
         )?
     	.with_bundle(
         	RenderingBundle::<DefaultBackend>::new()

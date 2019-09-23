@@ -10,59 +10,73 @@ use std::marker::PhantomData;
 use std::error::Error;
 use std::ops::{Deref, DerefMut};
 
-pub struct MutableVoxelWorld<V: AsVoxel> {
+/// A dynamically loaded infinite world component. 
+/// Voxel data is pulled from a VoxelSource component on the same entity.
+/// The voxel world has a rendering range around the viewpoint of the current camera, which is automatically updated.
+pub struct VoxelWorld<T: Data> {
     loaded: bool,
     limits: Limits,
     visibility: [f32; 6],
     view_range: f32,
-    pub(crate) data: Vec<Chunk<V>>,
+    pub(crate) data: Vec<Chunk<T>>,
     pub(crate) dims: [usize; 3],
     pub(crate) origin: [isize; 3],
     pub(crate) scale: f32,
 }
 
-pub struct MutableVoxel<V: AsVoxel> {
-    pub(crate) data: V::Voxel,
+/// A component that renders and contains a single root voxel.
+pub struct VoxelRender<T: Data> {
+    pub(crate) data: Voxel<T>,
     pub(crate) dirty: bool,
 
-    // todo: the associated mesh should be destroyed if the mutablevoxel is destroyed
+    // todo: the associated mesh should be destroyed if the VoxelRender is destroyed
     pub(crate) mesh: Option<usize>,
 }
 
-pub type VoxelFuture<V> = Box<dyn Future<Item=<V as AsVoxel>::Voxel, Error=Box<dyn Error+Send+Sync>>+Send+Sync>;
+/// Future alias for root voxels that will be loaded in the future.
+pub type VoxelFuture<T> = Box<dyn Future<Item=Voxel<T>, Error=Box<dyn Error+Send+Sync>>+Send+Sync>;
 
-/// Trait for loading new chunks
-pub trait Source<'a, V: AsVoxel> {
+/// Voxel data source for `VoxelWorld`
+pub trait VoxelSource<'a, T: Data> {
+    /// SystemData to be used in the process(..) function.
     type SystemData: SystemData<'a>;
 
-    /// Process requests that were made using `load` or `drop`.
+    /// This function will be called periodically to give the `VoxelSource` access to it's SystemData.
     fn process(&mut self, system_data: &mut Self::SystemData);
 
-    /// Load chunk at the specified chunk coordinate
-    fn load(&mut self, coord: [isize; 3]) -> VoxelFuture<V>;
+    /// Load chunk at the specified chunk coordinate/
+    fn load(&mut self, coord: [isize; 3]) -> VoxelFuture<T>;
 
-    /// Remove a chunk at the specified chunk coordinate
-    fn drop(&mut self, coord: [isize; 3], voxel: V::Voxel);
+    /// When a chunk is removed from the `VoxelWorld`, some sources might want to persist the changes made
+    /// to the voxel. When a chunk is removed, this function will be called dispose of the chunk properly.
+    fn drop(&mut self, coord: [isize; 3], voxel: Voxel<T>);
 
-    /// Retrieve the limits in chunks that this source can generate
+    /// Retrieve the limits in chunks that this VoxelSource can generate. 
+    /// Chunks that have neighbours according to the limits, but have no neighbours in the `VoxelWorld` 
+    /// will not be rendered to ensure that rendering glitches don't occur.
     fn limits(&self) -> Limits;
 }
 
-pub struct WorldSourceSystem<V: AsVoxel, S: for<'s> Source<'s, V>>(PhantomData<(V,S)>);
+pub struct WorldSystem<T: Data, S: for<'s> VoxelSource<'s, T>>(PhantomData<(T,S)>);
 
+/// Chunk coordinates to denote the rendering limits of a `VoxelWorld`.
+/// `None` specifies a non-existing limit, the world will be infinite in that direction.
+/// `Some` specifies an existing inclusive limit, chunk past this limit will not be requested.
 #[derive(Clone)]
 pub struct Limits {
     pub from: [Option<isize>; 3],
     pub to: [Option<isize>; 3],
 }
 
-pub(crate) enum Chunk<V: AsVoxel> {
+pub(crate) enum Chunk<T: Data> {
     NotNeeded,
-    NotReady(VoxelFuture<V>),
-    Ready(MutableVoxel<V>),
+    NotReady(VoxelFuture<T>),
+    Ready(VoxelRender<T>),
 }
 
-impl<V: AsVoxel> MutableVoxelWorld<V> {
+impl<T: Data> VoxelWorld<T> {
+    /// Create a new `VoxelWorld` component with specified render distance `dims` and a specified chunk `scale`.
+    /// The `VoxelWorld` will still require a `VoxelSource`, that should be added to the entity separately.
     pub fn new(dims: [usize; 3], scale: f32) -> Self {
         Self {
             loaded: false,
@@ -76,7 +90,7 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
         }
     }
 
-    pub(crate) fn get_ready_chunk(&mut self, index: usize) -> Option<&mut MutableVoxel<V>> {
+    pub(crate) fn get_ready_chunk(&mut self, index: usize) -> Option<&mut VoxelRender<T>> {
         if self.data[index].get_mut().map(|c| c.dirty).unwrap_or(false) {
             if self.available(0, index, 1) {
                 self.data[index].get_mut()
@@ -105,51 +119,53 @@ impl<V: AsVoxel> MutableVoxelWorld<V> {
     }
 }
 
-impl<V: AsVoxel + 'static> amethyst::ecs::Component for MutableVoxelWorld<V> {
+impl<T: Data> amethyst::ecs::Component for VoxelWorld<T> {
     type Storage = amethyst::ecs::DenseVecStorage<Self>;
 }
 
-impl<V: AsVoxel> MutableVoxel<V> {
-    pub fn new(value: V::Voxel) -> Self {
-        MutableVoxel {
+impl<T: Data> VoxelRender<T> {
+    /// Create a new `VoxelRender` component.
+    pub fn new(value: Voxel<T>) -> Self {
+        VoxelRender {
             data: value,
             dirty: true,
             mesh: None,
         }
     }
 
-    pub fn from_iter<I>(data: V::Data, iter: I) -> Self where
-        I: IntoIterator<Item = <<V as AsVoxel>::Voxel as Voxel<V::Data>>::Child>
+    /// Create a new `VoxelRender` component with a new `Voxel<T>` created from an iterator.
+    pub fn from_iter<I>(data: T, iter: I) -> Self where
+        I: IntoIterator<Item = Voxel<T>>
     {
-        MutableVoxel {
-            data: <V as AsVoxel>::Voxel::from_iter(data, iter),
+        VoxelRender {
+            data: Voxel::from_iter(data, iter),
             dirty: true,
             mesh: None,
         }
     }
 }
 
-impl<V: AsVoxel> Deref for MutableVoxel<V> {
-    type Target = V::Voxel;
+impl<T: Data> Deref for VoxelRender<T> {
+    type Target = Voxel<T>;
 
-    fn deref(&self) -> &V::Voxel {
+    fn deref(&self) -> &Voxel<T> {
         &self.data
     }
 }
 
-impl<V: AsVoxel> DerefMut for MutableVoxel<V> {
-    fn deref_mut(&mut self) -> &mut V::Voxel {
+impl<T: Data> DerefMut for VoxelRender<T> {
+    fn deref_mut(&mut self) -> &mut Voxel<T> {
         self.dirty = true;
         &mut self.data
     }
 }
 
-impl<V: AsVoxel + 'static> amethyst::ecs::Component for MutableVoxel<V> {
+impl<T: Data> amethyst::ecs::Component for VoxelRender<T> {
     type Storage = amethyst::ecs::DenseVecStorage<Self>;
 }
 
-impl<V: AsVoxel> Chunk<V> {
-    pub fn get(&self) -> Option<&MutableVoxel<V>> {
+impl<T: Data> Chunk<T> {
+    pub fn get(&self) -> Option<&VoxelRender<T>> {
         match *self {
             Chunk::NotNeeded => None,
             Chunk::NotReady(_) => None,
@@ -157,13 +173,13 @@ impl<V: AsVoxel> Chunk<V> {
         }
     }
 
-    pub fn get_mut(&mut self) -> Option<&mut MutableVoxel<V>> {
+    pub fn get_mut(&mut self) -> Option<&mut VoxelRender<T>> {
         match *self {
             Chunk::NotNeeded => None,
             Chunk::NotReady(ref mut fut) => {
                 match fut.poll() {
                     Ok(Async::Ready(voxel)) => {
-                        *self = Chunk::Ready(MutableVoxel::new(voxel));
+                        *self = Chunk::Ready(VoxelRender::new(voxel));
                         match *self {
                             Chunk::Ready(ref mut voxel) => Some(voxel),
                             _ => unreachable!(),
@@ -184,20 +200,20 @@ impl<V: AsVoxel> Chunk<V> {
     }
 }
 
-impl<V: AsVoxel, S: for<'s> Source<'s, V>> WorldSourceSystem<V, S> {
+impl<T: Data, S: for<'s> VoxelSource<'s, T>> WorldSystem<T, S> {
     pub fn new() -> Self {
-        WorldSourceSystem(PhantomData)
+        WorldSystem(PhantomData)
     }
 }
 
-impl<'s, V: 'static + AsVoxel, S: for<'a> Source<'a, V> + Component> System<'s> for WorldSourceSystem<V, S> {
+impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for WorldSystem<T, S> {
     type SystemData = (
-        WriteStorage<'s, MutableVoxelWorld<V>>,
+        WriteStorage<'s, VoxelWorld<T>>,
         WriteStorage<'s, S>,
         Read<'s, ActiveCamera>,
         ReadStorage<'s, Camera>,
         ReadStorage<'s, Transform>,
-        <S as Source<'s, V>>::SystemData,
+        <S as VoxelSource<'s, T>>::SystemData,
     );
 
     fn run(&mut self, (mut worlds, mut sources, active_camera, cameras, transforms, mut source_data): Self::SystemData) {

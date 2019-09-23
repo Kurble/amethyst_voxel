@@ -18,34 +18,31 @@ pub enum AmbientOcclusion<'a> {
     },
 }
 
-pub trait BuildAmbientOcclusion<'a, T: VoxelData, U: Voxel<T>> {
+pub trait BuildAmbientOcclusion<'a, T: Data, U: Triangulate<T>> {
     fn is_detail(voxel: &U) -> bool;
-    fn build<C: Context>(from: &U, neighbours: &C) -> AmbientOcclusion<'a>;
+    fn build<C: Context<T>>(from: &U, neighbours: &C) -> AmbientOcclusion<'a>;
 }
 
-impl<'a, T, U, V> BuildAmbientOcclusion<'a, T, Nested<T, U, V>> for AmbientOcclusion<'a> where
-    T: VoxelData, 
-    U: VoxelData, 
-    V: Voxel<U>,
-    AmbientOcclusion<'a>: BuildAmbientOcclusion<'a, U, V>,
+impl<'a, T> BuildAmbientOcclusion<'a, T, Voxel<T>> for AmbientOcclusion<'a> where
+    T: Data, 
 {
-    fn is_detail(voxel: &Nested<T, U, V>) -> bool {
+    fn is_detail(voxel: &Voxel<T>) -> bool {
         match *voxel {
-            Nested::Empty{ .. } |
-            Nested::Material{ .. } => false,
-            Nested::Detail{ .. } => true,
+            Voxel::Empty{ .. } |
+            Voxel::Material{ .. } => false,
+            Voxel::Detail{ .. } => true,
         }
     }
 
-    fn build<C: Context>(root: &Nested<T, U, V>, neighbours: &C) -> Self {
+    fn build<C: Context<T>>(root: &Voxel<T>, neighbours: &C) -> Self {
         let w = Const::<T>::AO_WIDTH as isize;
         match *root {
-            Nested::Empty{ .. } |
-            Nested::Material{ .. } => AmbientOcclusion::Small {  
+            Voxel::Empty{ .. } |
+            Voxel::Material{ .. } => AmbientOcclusion::Small {  
                 occlusion: [0xfff; 8],
             },
 
-            Nested::Detail{ ref detail, .. } => {
+            Voxel::Detail{ ref detail, .. } => {
                 let bound = |x| x < 0 || x > Const::<T>::LAST as isize;
                 let sample = |x, y, z| {
                 	if bound(x)||bound(y)||bound(z) { if neighbours.visible(x, y, z) { 1 } else { 0 } }
@@ -110,18 +107,6 @@ impl<'a, T, U, V> BuildAmbientOcclusion<'a, T, Nested<T, U, V>> for AmbientOcclu
     }
 }
 
-impl<'a> BuildAmbientOcclusion<'a, (), Simple> for AmbientOcclusion<'a> { 
-    fn is_detail(_: &Simple) -> bool {
-        false
-    }
-
-    fn build<C: Context>(_: &Simple, _: &C) -> Self {
-        AmbientOcclusion::Small {  
-            occlusion: [0xfff; 8],
-        }
-    }
-}
-
 impl AmbientOcclusion<'_> {
     pub(crate) fn sub(&self, x: usize, y: usize, z: usize) -> AmbientOcclusion {
         match *self {
@@ -148,7 +133,7 @@ impl AmbientOcclusion<'_> {
         }
     }
 
-    pub(crate) fn quad<T: VoxelData, S: Side<T>>(&self) -> [f32; 4] {
+    pub(crate) fn quad<T: Data, S: Side<T>>(&self) -> [f32; 4] {
         let f = |d: u16, s: u16| 1.0 - f32::from((d >> s) & 0x03) / 4.0;
         match *self {
             AmbientOcclusion::Small{ occlusion } => {

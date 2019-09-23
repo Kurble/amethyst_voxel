@@ -1,10 +1,10 @@
 pub use crate::{
 	bundle::VoxelBundle,
-	voxel::{Simple, Nested, Voxel, AsVoxel, VoxelData},
+	voxel::{Voxel, Data},
 	material::{VoxelMaterial, VoxelMaterialStorage, VoxelMaterialId},
-	world::{MutableVoxelWorld, MutableVoxel, Source, Limits, VoxelFuture},
-	collision::{Raycast, RaycastBase},
-	model::{VoxelModel, VoxelModelSource},
+	world::{VoxelWorld, VoxelRender, VoxelSource, Limits, VoxelFuture},
+	raycast::{Raycast, RaycastBase},
+	model::{Model, ModelSource},
 	vox::{VoxFormat},
 };
 
