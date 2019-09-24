@@ -1,7 +1,7 @@
-use crate::voxel::*;
+use crate::voxel::{Voxel, Data, Const};
 use crate::context::Context;
-use crate::side::*;
-use crate::triangulate::*;
+use crate::side::Side;
+use crate::triangulate::Triangulate;
 use std::collections::HashMap;
 
 pub enum AmbientOcclusion<'a> {
@@ -18,15 +18,8 @@ pub enum AmbientOcclusion<'a> {
     },
 }
 
-pub trait BuildAmbientOcclusion<'a, T: Data, U: Triangulate<T>> {
-    fn is_detail(voxel: &U) -> bool;
-    fn build<C: Context<T>>(from: &U, neighbours: &C) -> AmbientOcclusion<'a>;
-}
-
-impl<'a, T> BuildAmbientOcclusion<'a, T, Voxel<T>> for AmbientOcclusion<'a> where
-    T: Data, 
-{
-    fn is_detail(voxel: &Voxel<T>) -> bool {
+impl AmbientOcclusion<'_> {
+    pub fn is_detail<T: Data>(voxel: &Voxel<T>) -> bool {
         match *voxel {
             Voxel::Empty{ .. } |
             Voxel::Material{ .. } => false,
@@ -34,7 +27,7 @@ impl<'a, T> BuildAmbientOcclusion<'a, T, Voxel<T>> for AmbientOcclusion<'a> wher
         }
     }
 
-    fn build<C: Context<T>>(root: &Voxel<T>, neighbours: &C) -> Self {
+    pub fn build<T: Data, C: Context<T>>(root: &Voxel<T>, neighbours: &C) -> Self {
         let w = Const::<T>::AO_WIDTH as isize;
         match *root {
             Voxel::Empty{ .. } |
@@ -45,10 +38,10 @@ impl<'a, T> BuildAmbientOcclusion<'a, T, Voxel<T>> for AmbientOcclusion<'a> wher
             Voxel::Detail{ ref detail, .. } => {
                 let bound = |x| x < 0 || x > Const::<T>::LAST as isize;
                 let sample = |x, y, z| {
-                	if bound(x)||bound(y)||bound(z) { if neighbours.visible(x, y, z) { 1 } else { 0 } }
-                	else if detail[Const::<T>::coord_to_index(x as usize, y as usize, z as usize)].visible() { 1 }
-                	else { 0 }
-	            };
+                    if bound(x)||bound(y)||bound(z) { if neighbours.visible(x, y, z) { 1 } else { 0 } }
+                    else if detail[Const::<T>::coord_to_index(x as usize, y as usize, z as usize)].visible() { 1 }
+                    else { 0 }
+                };
                 let process = |s: [u16; 8]| {
                     let table = |s: [u16; 4]| match s {
                         [0,0,0,0] => 0,
@@ -105,10 +98,8 @@ impl<'a, T> BuildAmbientOcclusion<'a, T, Voxel<T>> for AmbientOcclusion<'a> wher
             },
         }        
     }
-}
 
-impl AmbientOcclusion<'_> {
-    pub(crate) fn sub(&self, x: usize, y: usize, z: usize) -> AmbientOcclusion {
+    pub fn sub(&self, x: usize, y: usize, z: usize) -> AmbientOcclusion {
         match *self {
             AmbientOcclusion::Big{ ref occlusion, ref detail, width } => {
                 let i = x+y*width+z*width*width;
@@ -133,7 +124,7 @@ impl AmbientOcclusion<'_> {
         }
     }
 
-    pub(crate) fn quad<T: Data, S: Side<T>>(&self) -> [f32; 4] {
+    pub fn quad<T: Data, S: Side<T>>(&self) -> [f32; 4] {
         let f = |d: u16, s: u16| 1.0 - f32::from((d >> s) & 0x03) / 4.0;
         match *self {
             AmbientOcclusion::Small{ occlusion } => {

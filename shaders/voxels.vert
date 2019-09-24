@@ -8,7 +8,7 @@ layout(std140, set = 0, binding = 0) uniform Projview {
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 tangent;
-layout(location = 3) in vec3 color; // color is abused as "tex_coord + ambient_occlusion"
+layout(location = 3) in vec3 surface; 
 layout(location = 4) in mat4 model; // instance rate
 layout(location = 8) in vec4 tint; // instance rate
 
@@ -27,7 +27,7 @@ void main() {
     vertex.normal = mat3(model) * normal;
     vertex.tangent = mat3(model) * tangent;
     vertex.tang_handedness = 1.0;
-    vertex.tex_coord = color.xy;
-    vertex.color = tint * color.z;
+    vertex.tex_coord = surface.xy;
+    vertex.color = tint * surface.z;
     gl_Position = proj * view * vertex_position;
 }

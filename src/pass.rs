@@ -22,10 +22,10 @@ use rendy::{
         render::{PrepareResult, RenderGroup, RenderGroupDesc},
         GraphContext, NodeBuffer, NodeImage,
     },
-    hal::{self, device::Device, pso},
-    mesh::{AsVertex, VertexFormat, MeshBuilder},
+    hal::{self, format::Format, device::Device, pso},
+    mesh::{AsVertex, AsAttribute, VertexFormat, MeshBuilder},
     shader::{Shader, SpirvShader},
-    util::types::vertex::{Position, Normal, Tangent, Color},
+    util::types::vertex::{Position, Normal, Tangent},
 };
 use smallvec::SmallVec;
 use std::marker::PhantomData;
@@ -61,6 +61,18 @@ pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: Data> {
 
 #[derive(Debug)]
 pub struct VoxelPassDef<T: Base3DPassDef>(PhantomData<T>);
+
+/// Type for combined texture coord and ambient occlusion attributes of vertex
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Surface {
+    pub tex_ao: [f32; 3],
+}
+
+impl AsAttribute for Surface {
+    const NAME: &'static str = "surface";
+    const FORMAT: Format = Format::Rgb32Sfloat;
+}
 
 impl<B: Backend, T: Base3DPassDef, V: Data> DrawVoxelDesc<B, T, V> {
     pub fn new() -> Self {
@@ -146,7 +158,7 @@ impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
             Position::vertex(),
             Normal::vertex(),
             Tangent::vertex(),
-            Color::vertex(),
+            Surface::vertex(),
         ]
     }
     fn skinned_format() -> Vec<VertexFormat> {
@@ -154,7 +166,7 @@ impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
             Position::vertex(),
             Normal::vertex(),
             Tangent::vertex(),
-            Color::vertex(),
+            Surface::vertex(),
             JointCombined::vertex(),
         ]
     }
@@ -372,7 +384,10 @@ fn build_mesh<'a, B, V, C>(
         pos, nml, tan, tex, ind,
     } = crate::triangulate::Mesh::build::<V, C>(&voxel.data, &ao, &context, pos, scale);
 
-    let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| materials.coord(mat, ao)).collect();
+    let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| {
+        let [u, v] = materials.coord(mat);
+        Surface{ tex_ao: [u, v, ao] }
+    }).collect();
 
     if pos.len() > 0 {
         Some(B::wrap_mesh(MeshBuilder::new()

@@ -5,7 +5,9 @@ use crate::side::*;
 use crate::ambient_occlusion::*;
 use crate::material::VoxelMaterialId;
 use nalgebra_glm::*;
-use rendy::mesh::{Position, Normal, Tangent};
+use rendy::{
+    mesh::{Position, Normal, Tangent},
+};
 
 /// The required functionality to triangulate voxels.
 pub trait Triangulate<T: Data> {
