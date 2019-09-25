@@ -53,9 +53,29 @@ pub enum Voxel<T: Data> {
     },
 }
 
-pub(crate) struct Const<T>(T);
-
 impl<T: Data> Voxel<T> {
+    pub const WIDTH: usize = 1 << T::SUBDIV;
+    pub const AO_WIDTH: usize = Self::WIDTH + 1;
+    pub const LAST: usize = Self::WIDTH - 1;
+    pub const COUNT: usize = Self::WIDTH * Self::WIDTH * Self::WIDTH;
+    pub const DX: usize = 1;
+    pub const DY: usize = Self::DX * Self::WIDTH;
+    pub const DZ: usize = Self::DY * Self::WIDTH;
+    pub const SCALE: f32 = 1.0 / Self::WIDTH as f32;
+
+    /// Convert a coordinate in the format (x, y, z) to an array index
+    pub fn coord_to_index(x: usize, y: usize, z: usize) -> usize {
+        x * Self::DX + y * Self::DY + z * Self::DZ
+    }
+
+    /// Convert an array index to a coordinate in the format (x, y, z)
+    pub fn index_to_coord(index: usize) -> (usize, usize, usize) {
+        let x = index & Self::LAST;
+        let y = (index >> T::SUBDIV) & Self::LAST;
+        let z = (index >> (T::SUBDIV*2)) & Self::LAST;
+        (x, y, z)
+    }
+
     /// Construct a new, empty voxel. The voxel will have no content at all.
     pub fn new(data: T) -> Self {
         Voxel::Empty {
@@ -69,7 +89,7 @@ impl<T: Data> Voxel<T> {
     {
         Voxel::Detail {
             data,
-            detail: Arc::new(Vec::from_iter(iter.into_iter().take(Const::<T>::COUNT))),
+            detail: Arc::new(Vec::from_iter(iter.into_iter().take(Self::COUNT))),
         }
     }
 
@@ -133,28 +153,3 @@ impl<T: Data> DerefMut for Voxel<T> {
         }
     }
 }
-
-impl<T: Data> Const<T> {
-    pub const WIDTH: usize = 1 << T::SUBDIV;
-    pub const AO_WIDTH: usize = Self::WIDTH + 1;
-    pub const LAST: usize = Self::WIDTH - 1;
-    pub const COUNT: usize = Self::WIDTH * Self::WIDTH * Self::WIDTH;
-    pub const DX: usize = 1;
-    pub const DY: usize = Self::DX * Self::WIDTH;
-    pub const DZ: usize = Self::DY * Self::WIDTH;
-    pub const SCALE: f32 = 1.0 / Self::WIDTH as f32;
-
-    /// Convert a coordinate in the format (x, y, z) to an array index
-    pub fn coord_to_index(x: usize, y: usize, z: usize) -> usize {
-        x * Self::DX + y * Self::DY + z * Self::DZ
-    }
-
-    /// Convert an array index to a coordinate in the format (x, y, z)
-    pub fn index_to_coord(index: usize) -> (usize, usize, usize) {
-        let x = index & Self::LAST;
-        let y = (index >> T::SUBDIV) & Self::LAST;
-        let z = (index >> (T::SUBDIV*2)) & Self::LAST;
-        (x, y, z)
-    }
-}
-

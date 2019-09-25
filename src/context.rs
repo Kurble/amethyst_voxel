@@ -1,6 +1,6 @@
 use crate::world::VoxelWorld;
 use crate::triangulate::Triangulate;
-use crate::voxel::{Voxel, Data, Const};
+use crate::voxel::{Voxel, Data};
 
 /// Trait for retrieving neighbour information between separate root voxels.
 pub trait Context<T: Data> {
@@ -44,10 +44,10 @@ impl<'a, T: Data> Context<T> for VoxelContext<'a, T> {
     fn render(&self, _: isize, _: isize, _: isize) -> bool { false }
 
     fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, T> { 
-        if x >= 0 && x < Const::<T>::WIDTH as isize &&
-           y >= 0 && y < Const::<T>::WIDTH as isize &&
-           z >= 0 && z < Const::<T>::WIDTH as isize {
-            let index = Const::<T>::coord_to_index(x as usize, y as usize, z as usize);
+        if x >= 0 && x < Voxel::<T>::WIDTH as isize &&
+           y >= 0 && y < Voxel::<T>::WIDTH as isize &&
+           z >= 0 && z < Voxel::<T>::WIDTH as isize {
+            let index = Voxel::<T>::coord_to_index(x as usize, y as usize, z as usize);
             DetailContext::new(self, [x, y, z], self.voxel.get(index))
         } else {
             DetailContext::new(self, [x, y, z], None)
@@ -65,13 +65,13 @@ impl<'a, T: Data> DetailContext<'a, T> {
     }
 
     fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a Voxel<T>> {
-        let size = Const::<T>::WIDTH as isize;
+        let size = Voxel::<T>::WIDTH as isize;
         let coord = [x, y, z];
         if (0..3).fold(true, |b, i| b && coord[i] >= 0 && coord[i] < size) {
             self.voxel.and_then(|v| v.get(
-                x as usize * Const::<T>::DX +
-                y as usize * Const::<T>::DY +
-                z as usize * Const::<T>::DZ))
+                x as usize * Voxel::<T>::DX +
+                y as usize * Voxel::<T>::DY +
+                z as usize * Voxel::<T>::DZ))
         } else {
             let grid = |x| if x >= 0 { x / size } else { (x+1) / size - 1};
             let grid_mod = |x| if x%size >= 0 { x%size } else { x%size + size };
@@ -111,7 +111,7 @@ impl<'a, V: Data> WorldContext<'a, V> {
     }
 
     fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a Voxel<V>> {
-        let size = Const::<V>::WIDTH as isize;
+        let size = Voxel::<V>::WIDTH as isize;
         let grid = |x| if x >= 0 { x / size } else { (x+1) / size - 1};
         let coord = [self.coord[0]+grid(x), self.coord[1]+grid(y), self.coord[2]+grid(z)];
         
@@ -122,9 +122,9 @@ impl<'a, V: Data> WorldContext<'a, V> {
             if let Some(voxel) = self.world.data[index].get() {
                 let grid_mod = |x: isize| if x%size >= 0 { x%size } else { x%size + size } as usize;
                 voxel.get(
-                    grid_mod(x)*Const::<V>::DX + 
-                    grid_mod(y)*Const::<V>::DY + 
-                    grid_mod(z)*Const::<V>::DZ)
+                    grid_mod(x)*Voxel::<V>::DX + 
+                    grid_mod(y)*Voxel::<V>::DY + 
+                    grid_mod(z)*Voxel::<V>::DZ)
             } else {
                 None
             }

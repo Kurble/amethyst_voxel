@@ -96,13 +96,13 @@ fn triangulate_detail<'a, D, T, S, C>(mesh: &mut Mesh, ao: &'a AmbientOcclusion<
     C: Context<D>, 
 {
     // the scale of a single sub-voxel
-    let scale = scale * Const::<D>::SCALE;
+    let scale = scale * Voxel::<D>::SCALE;
     // loop over all sub-voxels and check for visible faces
-    for i in 0..Const::<D>::COUNT {
+    for i in 0..Voxel::<D>::COUNT {
         if sub[i].visible() {
-            let x = (i) & Const::<D>::LAST;
-            let y = (i >> D::SUBDIV) & Const::<D>::LAST;
-            let z = (i >> (D::SUBDIV * 2)) & Const::<D>::LAST;
+            let x = (i) & Voxel::<D>::LAST;
+            let y = (i >> D::SUBDIV) & Voxel::<D>::LAST;
+            let z = (i >> (D::SUBDIV * 2)) & Voxel::<D>::LAST;
             let j = (i as isize + S::OFFSET) as usize;
 
             if sub[i].render() || 

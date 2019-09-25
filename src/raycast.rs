@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::any::Any;
 use nalgebra_glm::*;
-use crate::voxel::{Voxel, Data, Const};
+use crate::voxel::{Voxel, Data};
 use crate::triangulate::Triangulate;
 
 /// A ray that can be used to perform raycasting on a specific type that implements `Raycast`.
@@ -235,14 +235,14 @@ impl<T: Data> Raycast for Voxel<T> {
 
         // lambda that checks if we hit something
         let hit = |[x, y, z]: [i64; 3]| -> Option<Ray<Self>>{
-            if x >= 0 && x < Const::<T>::WIDTH as i64 &&
-                y >= 0 && y < Const::<T>::WIDTH as i64 &&
-                z >= 0 && z < Const::<T>::WIDTH as i64 {
-                let i = x as usize + y as usize * Const::<T>::DY + z as usize * Const::<T>::DZ;
+            if x >= 0 && x < Self::WIDTH as i64 &&
+                y >= 0 && y < Self::WIDTH as i64 &&
+                z >= 0 && z < Self::WIDTH as i64 {
+                let i = x as usize + y as usize * Self::DY + z as usize * Self::DZ;
                 match self.get(i) {
                     Some(voxel) => {
                         if voxel.visible() {
-                            let sc = Const::<T>::SCALE;
+                            let sc = Self::SCALE;
                             let s = scaling(&vec3(sc, sc, sc));
                             let t = translation(&vec3(x as f32 * sc, y as f32 * sc, z as f32 * sc));
                             let r = Ray {

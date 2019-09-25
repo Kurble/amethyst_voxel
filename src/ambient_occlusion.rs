@@ -1,4 +1,4 @@
-use crate::voxel::{Voxel, Data, Const};
+use crate::voxel::{Voxel, Data};
 use crate::context::Context;
 use crate::side::Side;
 use crate::triangulate::Triangulate;
@@ -28,7 +28,7 @@ impl AmbientOcclusion<'_> {
     }
 
     pub fn build<T: Data, C: Context<T>>(root: &Voxel<T>, neighbours: &C) -> Self {
-        let w = Const::<T>::AO_WIDTH as isize;
+        let w = Voxel::<T>::AO_WIDTH as isize;
         match *root {
             Voxel::Empty{ .. } |
             Voxel::Material{ .. } => AmbientOcclusion::Small {  
@@ -36,10 +36,10 @@ impl AmbientOcclusion<'_> {
             },
 
             Voxel::Detail{ ref detail, .. } => {
-                let bound = |x| x < 0 || x > Const::<T>::LAST as isize;
+                let bound = |x| x < 0 || x > Voxel::<T>::LAST as isize;
                 let sample = |x, y, z| {
                     if bound(x)||bound(y)||bound(z) { if neighbours.visible(x, y, z) { 1 } else { 0 } }
-                    else if detail[Const::<T>::coord_to_index(x as usize, y as usize, z as usize)].visible() { 1 }
+                    else if detail[Voxel::<T>::coord_to_index(x as usize, y as usize, z as usize)].visible() { 1 }
                     else { 0 }
                 };
                 let process = |s: [u16; 8]| {
@@ -80,10 +80,10 @@ impl AmbientOcclusion<'_> {
 
                 AmbientOcclusion::Big {
                     occlusion,
-                    detail: (0..Const::<T>::COUNT)
+                    detail: (0..Voxel::<T>::COUNT)
                         .filter_map(|i| {
                             if Self::is_detail(&detail[i]) {
-                                let (x, y, z) = Const::<T>::index_to_coord(i);
+                                let (x, y, z) = Voxel::<T>::index_to_coord(i);
                                 let neighbours = neighbours
                                     .clone()
                                     .child(x as isize, y as isize, z as isize);
@@ -93,7 +93,7 @@ impl AmbientOcclusion<'_> {
                             }
                         })
                         .collect(),
-                    width: Const::<T>::AO_WIDTH,
+                    width: Voxel::<T>::AO_WIDTH,
                 }
             },
         }        

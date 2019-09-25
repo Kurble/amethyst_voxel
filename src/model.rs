@@ -7,7 +7,7 @@ use amethyst::{
 };
 use crate::{
     material::{VoxelMaterial, VoxelMaterialId, VoxelMaterialStorage},
-    voxel::{Data, Voxel, Const},
+    voxel::{Data, Voxel},
     world::*,
 };
 use std::sync::{Arc, Mutex};
@@ -126,7 +126,7 @@ impl<'a, V> VoxelSource<'a, V> for ModelSource where
 
     fn process(&mut self, models: &mut Self::SystemData) {
         if let Some(model) = models.get(&self.handle) {
-            let w = Const::<V>::WIDTH as isize;
+            let w = Voxel::<V>::WIDTH as isize;
             for i in 0..3 {
                 let d = model.dimensions[i] as isize;
                 self.limits.to[i] = Some(if d%w == 0 { d/w - 1 } else { d/w });
@@ -146,7 +146,7 @@ impl<'a, V> VoxelSource<'a, V> for ModelSource where
 
         self.requests.push(Box::new(move |model| {
             if let Ok(mut guard) = handle.lock() {
-                let w = Const::<V>::WIDTH as isize;
+                let w = Voxel::<V>::WIDTH as isize;
                 
                 let mut from = [0, 0, 0];
                 let mut to = [0, 0, 0];
@@ -160,8 +160,8 @@ impl<'a, V> VoxelSource<'a, V> for ModelSource where
                     }
                 }
 
-                let iter = (0..Const::<V>::COUNT).map(|i| {
-                    let (x, y, z) = Const::<V>::index_to_coord(i);
+                let iter = (0..Voxel::<V>::COUNT).map(|i| {
+                    let (x, y, z) = Voxel::<V>::index_to_coord(i);
                     if x < range[0] && y < range[1] && z < range[2] {
                         let x = from[0]+x;
                         let y = from[1]+y;
