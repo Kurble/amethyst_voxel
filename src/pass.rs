@@ -12,7 +12,7 @@ use amethyst::renderer::{
 };
 
 use amethyst::core::{
-    ecs::{Join, Read, ReadStorage, WriteStorage, Resources, SystemData},
+    ecs::{World, Join, Read, ReadStorage, WriteStorage, SystemData},
     transform::Transform,
 };
 use rendy::{
@@ -82,7 +82,7 @@ impl<B: Backend, T: Base3DPassDef, V: Data> DrawVoxelDesc<B, T, V> {
     }
 }
 
-impl<'a, B, T, V> RenderGroupDesc<B, Resources> for DrawVoxelDesc<B, T, V> where
+impl<'a, B, T, V> RenderGroupDesc<B, World> for DrawVoxelDesc<B, T, V> where
     B: Backend,
     T: Base3DPassDef,
     V: Data,
@@ -92,14 +92,17 @@ impl<'a, B, T, V> RenderGroupDesc<B, Resources> for DrawVoxelDesc<B, T, V> where
         _ctx: &GraphContext<B>,
         factory: &mut Factory<B>,
         _queue: QueueId,
-        _aux: &Resources,
+        _aux: &World,
         framebuffer_width: u32,
         framebuffer_height: u32,
         subpass: hal::pass::Subpass<'_, B>,
         _buffers: Vec<NodeBuffer>,
         _images: Vec<NodeImage>,
-    ) -> Result<Box<dyn RenderGroup<B, Resources>>, failure::Error> {
-        let env = EnvironmentSub::new(factory)?;
+    ) -> Result<Box<dyn RenderGroup<B, World>>, failure::Error> {
+        let env = EnvironmentSub::new(factory,  [
+            hal::pso::ShaderStageFlags::VERTEX,
+            hal::pso::ShaderStageFlags::FRAGMENT,
+        ])?;
         let materials = MaterialSub::new(factory)?;
         let skinning = SkinningSub::new(factory)?;
 
@@ -172,7 +175,7 @@ impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
     }
 }
 
-impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
+impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V> where
     B: Backend,
     T: Base3DPassDef,
     V: Data,
@@ -183,7 +186,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
         queue: QueueId,
         index: usize,
         _subpass: hal::pass::Subpass<'_, B>,
-        resources: &Resources,
+        world: &World,
     ) -> PrepareResult {
         let (
             //visibility,
@@ -198,10 +201,10 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
             Read<'_, VoxelMaterialStorage>,
             ReadStorage<'_, Transform>,
             ReadStorage<'_, Tint>,
-        )>::fetch(resources);
+        )>::fetch(world);
 
         // Prepare environment
-        self.env.process(factory, index, resources);
+        self.env.process(factory, index, world);
         self.materials.maintain();
 
         self.static_batches.clear_inner();
@@ -239,7 +242,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                     })
                 })
                 .for_each_group(|(mat, id), data| {
-                    if let Some((mat, _)) = materials_ref.insert(factory, resources, mat) {
+                    if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
                         statics_ref.insert(mat, id, data.drain(..));
                     }
                 });
@@ -292,7 +295,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
                     })
                 })
                 .for_each_group(|(mat, id), data| {
-                    if let Some((mat, _)) = materials_ref.insert(factory, resources, mat) {
+                    if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
                         statics_ref.insert(mat, id, data.drain(..));
                     }
                 });
@@ -314,7 +317,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
         mut encoder: RenderPassEncoder<'_, B>,
         index: usize,
         _subpass: hal::pass::Subpass<'_, B>,
-        _resources: &Resources,
+        _world: &World,
     ) {
         let models_loc = self.vertex_format_base.len() as u32;
 
@@ -345,7 +348,7 @@ impl<'a, B, T, V> RenderGroup<B, Resources> for DrawVoxel<B, T, V> where
         }
     }
 
-    fn dispose(self: Box<Self>, factory: &mut Factory<B>, _aux: &Resources) {
+    fn dispose(self: Box<Self>, factory: &mut Factory<B>, _aux: &World) {
         unsafe {
             factory
                 .device()

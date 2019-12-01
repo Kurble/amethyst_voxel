@@ -1,7 +1,7 @@
 use amethyst::prelude::*;
 use amethyst::{
     ecs::prelude::*,
-	assets::{PrefabLoader, PrefabLoaderSystem, RonFormat},
+	assets::{PrefabLoader, PrefabLoaderSystemDesc, RonFormat},
 	core::transform::{TransformBundle, Transform},
     window::{ScreenDimensions},
     controls::{FlyControlBundle},
@@ -19,7 +19,7 @@ use amethyst::{
 	utils::{
 		application_root_dir,
 	},
-	input::{VirtualKeyCode, InputBundle, InputHandler, StringBindings, is_key_down, is_mouse_button_down},
+	input::{VirtualKeyCode, InputBundle, /*InputHandler,*/ StringBindings, is_key_down, is_mouse_button_down},
     winit::MouseButton,
 	utils::{scene::BasicScenePrefab},
 };
@@ -50,9 +50,6 @@ impl Example {
 
 impl SimpleState for Example {
     fn on_start(&mut self, data: StateData<GameData>) {
-        data.world.register::<VoxelRender<ExampleVoxel>>();
-        data.world.register::<VoxelWorld<ExampleVoxel>>();
-
         let prefab_handle = data.world.exec(|loader: PrefabLoader<'_, MyPrefabData>| {
             loader.load("prefab/hello_voxel.ron", RonFormat, ())
         });
@@ -107,8 +104,8 @@ impl SimpleState for Example {
 
                     //let mouse = input.mouse_position().map(|(x, y)| [x, y].into()).unwrap();
                     let screen = screen.diagonal();
-                    let point = [screen.x * 0.5, screen.y * 0.5].into();
-                    let point = camera.projection().screen_to_world(point, screen, transform);
+                    let point = [screen.x * 0.5, screen.y * 0.5, 1.0].into();
+                    let point = camera.projection().screen_to_world_point(point, screen, transform);
                     let origin = transform.global_matrix().column(3).xyz();
                     let direction = (vec3(point.x, point.y, point.z) - origin).normalize();
 
@@ -144,7 +141,7 @@ fn main() -> amethyst::Result<()> {
     let key_bindings_path = app_root.join("examples/config/input.ron");
 
     let game_data = GameDataBuilder::default()
-    	.with(PrefabLoaderSystem::<MyPrefabData>::default(), "", &[])
+    	.with_system_desc(PrefabLoaderSystemDesc::<MyPrefabData>::default(), "", &[])
         .with_bundle(
             FlyControlBundle::<StringBindings>::new(
                 Some(String::from("move_x")),

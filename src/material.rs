@@ -180,8 +180,8 @@ impl<'a> System<'a> for VoxelMaterialSystem {
         }
     }
 
-    fn setup(&mut self, res: &mut Resources) {
-        Self::SystemData::setup(res);
+    fn setup(&mut self, world: &mut World) {
+        Self::SystemData::setup(world);
         //
     }
 }

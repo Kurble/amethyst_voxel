@@ -5,7 +5,7 @@ authors = ["Bram Buurlage <brambuurlage@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-amethyst = { version="0.12", features = ["metal"] }
+amethyst = { version="0.13", features = ["vulkan"] }
 nalgebra-glm = "0.4"
 derivative = "1.0"
 smallvec = "0.6.9"

@@ -1,4 +1,5 @@
 use crate::voxel::Data;
+use crate::world::VoxelRender;
 use crate::pass::*;
 
 use amethyst::{
@@ -7,7 +8,7 @@ use amethyst::{
         pass::Base3DPassDef,
         Backend, Factory,
     },
-    core::ecs::{DispatcherBuilder, Resources},
+    core::ecs::{DispatcherBuilder, World, WorldExt},
     error::{Error},
 };
 use rendy::graph::render::RenderGroupDesc;
@@ -36,8 +37,10 @@ impl<B, D, V> RenderPlugin<B> for RenderVoxel<D, V> where
 {
     fn on_build<'a, 'b>(
         &mut self,
+        world: &mut World,
         _builder: &mut DispatcherBuilder<'a, 'b>,
     ) -> Result<(), Error> {
+        world.register::<VoxelRender<V>>();
         //builder.add(VisibilitySortingSystem::new(), "visibility_system", &[]);
         Ok(())
     }
@@ -46,7 +49,7 @@ impl<B, D, V> RenderPlugin<B> for RenderVoxel<D, V> where
         &mut self,
         plan: &mut RenderPlan<B>,
         _factory: &mut Factory<B>,
-        _resources: &Resources,
+        _world: &World,
     ) -> Result<(), Error> {
         plan.extend_target(self.target, move |ctx| {
             ctx.add(RenderOrder::Opaque, DrawVoxelDesc::<B, D, V>::new().builder())?;
