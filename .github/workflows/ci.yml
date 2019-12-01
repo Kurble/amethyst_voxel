@@ -3,9 +3,16 @@ on: [push, pull_request]
 name: CI
 
 jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: apt-get
+        run: sudo apt-get install gcc pkg-config openssl libasound2-dev cmake build-essential python3 libfreetype6-dev libexpat1-dev libxcb-composite0-dev libssl-dev libx11-dev
   check:
     name: Check
     runs-on: ubuntu-latest
+    needs: setup
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
@@ -19,6 +26,7 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    needs: setup
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
@@ -32,6 +40,7 @@ jobs:
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
+    needs: setup
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
@@ -47,6 +56,7 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    needs: setup
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
