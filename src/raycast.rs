@@ -1,24 +1,24 @@
+use crate::triangulate::Triangulate;
+use crate::voxel::{Data, Voxel};
 use crate::world::VoxelWorld;
+use nalgebra_glm::*;
+use std::any::Any;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use std::any::Any;
-use nalgebra_glm::*;
-use crate::voxel::{Voxel, Data};
-use crate::triangulate::Triangulate;
 
 /// A ray that can be used to perform raycasting on a specific type that implements `Raycast`.
 /// The ray is not compatible with other `Raycast` implementations.
 pub struct Ray<T: Raycast> {
     transform: Mat4,
     origin: Vec3,
-    direction: Vec3, 
+    direction: Vec3,
     index: Option<usize>,
     marker: PhantomData<T>,
 }
 
-/// A "root" type that can create rays as well as being raycasted. 
+/// A "root" type that can create rays as well as being raycasted.
 pub trait RaycastBase: Raycast {
-    /// Create a new ray compatible with `Self`. 
+    /// Create a new ray compatible with `Self`.
     fn ray(&self, origin: Vec3, direction: Vec3) -> Ray<Self>;
 }
 
@@ -42,7 +42,7 @@ pub trait Raycast: Any + Sized {
             (self as &dyn Any).downcast_ref()
         } else if let Some(ray) = self.cast(ray) {
             if let Some(child) = self.get(&ray) {
-                child.select(&ray, depth-1)
+                child.select(&ray, depth - 1)
             } else {
                 None
             }
@@ -57,7 +57,7 @@ pub trait Raycast: Any + Sized {
             (self as &mut dyn Any).downcast_mut()
         } else if let Some(ray) = self.cast(ray) {
             if let Some(child) = self.get_mut(&ray) {
-                child.select_mut(&ray, depth-1)
+                child.select_mut(&ray, depth - 1)
             } else {
                 None
             }
@@ -68,11 +68,11 @@ pub trait Raycast: Any + Sized {
 
     /// Get the distance on the ray to the nearest hit.
     fn hit(&self, ray: &Ray<Self>) -> Option<f32> {
-        self.cast(ray)
-            .and_then(|ray| self
-                .get(&ray)
+        self.cast(ray).and_then(|ray| {
+            self.get(&ray)
                 .and_then(|sub| sub.hit(&ray))
-                .or_else(|| Some(ray.distance())))
+                .or_else(|| Some(ray.distance()))
+        })
     }
 }
 
@@ -101,35 +101,45 @@ impl<V: Data> Raycast for VoxelWorld<V> {
 
     fn cast(&self, ray: &Ray<Self>) -> Option<Ray<Self::Child>> {
         // the current location being checked on the ray
-        let mut current = ray.origin * (1.0/self.scale) - vec3(
-            self.origin[0] as f32, 
-            self.origin[1] as f32,
-            self.origin[2] as f32);
+        let mut current = ray.origin * (1.0 / self.scale)
+            - vec3(
+                self.origin[0] as f32,
+                self.origin[1] as f32,
+                self.origin[2] as f32,
+            );
         // keep the current location as integer coordinates, to mitigate rounding errors on
         //  integrated values
-        let mut current_i = [current[0] as isize, current[1] as isize, current[2] as isize];
+        let mut current_i = [
+            current[0] as isize,
+            current[1] as isize,
+            current[2] as isize,
+        ];
         for i in 0..3 {
-            if (current[i].floor() - current[i]).abs() < std::f32::EPSILON && ray.direction[i] < 0.0 {
+            if (current[i].floor() - current[i]).abs() < std::f32::EPSILON && ray.direction[i] < 0.0
+            {
                 current_i[i] -= 1;
             }
         }
-        let hit = |coord:[isize;3]|->Option<Ray<Self::Child>> {
-            if (0..3).fold(true, |b, i| b && coord[i] >= 0 && coord[i] < self.dims[i] as isize) {
-                let i = coord[0] as usize + 
-                    coord[1] as usize * self.dims[0] + 
-                    coord[2] as usize * self.dims[0] * self.dims[1];
+        let hit = |coord: [isize; 3]| -> Option<Ray<Self::Child>> {
+            if (0..3).fold(true, |b, i| {
+                b && coord[i] >= 0 && coord[i] < self.dims[i] as isize
+            }) {
+                let i = coord[0] as usize
+                    + coord[1] as usize * self.dims[0]
+                    + coord[2] as usize * self.dims[0] * self.dims[1];
                 match self.data[i].get() {
                     Some(voxel) => {
                         if voxel.visible() {
                             let sc = self.scale;
                             let s = scaling(&vec3(sc, sc, sc));
                             let t = translation(&vec3(
-                                (self.origin[0] + coord[0]) as f32 * sc, 
-                                (self.origin[1] + coord[1]) as f32 * sc, 
-                                (self.origin[2] + coord[2]) as f32 * sc));
+                                (self.origin[0] + coord[0]) as f32 * sc,
+                                (self.origin[1] + coord[1]) as f32 * sc,
+                                (self.origin[2] + coord[2]) as f32 * sc,
+                            ));
                             let r = Ray {
-                                transform: ray.transform*t*s, 
-                                origin: ray.origin, 
+                                transform: ray.transform * t * s,
+                                origin: ray.origin,
                                 direction: ray.direction,
                                 index: Some(i),
                                 marker: PhantomData,
@@ -142,7 +152,7 @@ impl<V: Data> Raycast for VoxelWorld<V> {
                         } else {
                             None
                         }
-                    },
+                    }
                     None => None,
                 }
             } else {
@@ -166,8 +176,8 @@ impl<V: Data> Raycast for VoxelWorld<V> {
 
             // advance by the distance to the nearest grid intersection
             for d in 0..3 {
-                let e = (d+1)%3;
-                let f = (d+2)%3;
+                let e = (d + 1) % 3;
+                let f = (d + 2) % 3;
                 if i[d] <= i[e] && i[d] <= i[f] {
                     current += ray.direction * i[d];
                     if ray.direction[d] < 0.0 {
@@ -191,11 +201,15 @@ impl<V: Data> Raycast for VoxelWorld<V> {
     }
 
     fn get(&self, ray: &Ray<Self::Child>) -> Option<&Self::Child> {
-        ray.index.and_then(move |index| self.data[index].get()).map(|c| c.deref())
+        ray.index
+            .and_then(move |index| self.data[index].get())
+            .map(|c| c.deref())
     }
 
     fn get_mut(&mut self, ray: &Ray<Self::Child>) -> Option<&mut Self::Child> {
-        ray.index.and_then(move |index| self.data[index].get_mut()).map(|c| c.deref_mut())
+        ray.index
+            .and_then(move |index| self.data[index].get_mut())
+            .map(|c| c.deref_mut())
     }
 }
 
@@ -215,9 +229,9 @@ impl<T: Data> Raycast for Voxel<T> {
         //  box already.
         for i in 0..3 {
             let t = if current_direction[i] > 0.0 {
-                (0.0-current[i]) / current_direction[i]
+                (0.0 - current[i]) / current_direction[i]
             } else {
-                ((1<<T::SUBDIV) as f32 - current[i]) / current_direction[i]
+                ((1 << T::SUBDIV) as f32 - current[i]) / current_direction[i]
             };
             if t > 0.0 {
                 current += current_direction * t;
@@ -228,16 +242,22 @@ impl<T: Data> Raycast for Voxel<T> {
         //  integrated values
         let mut current_i = [current[0] as i64, current[1] as i64, current[2] as i64];
         for i in 0..3 {
-            if (current[i].floor() - current[i]).abs() < std::f32::EPSILON && current_direction[i] < 0.0 {
+            if (current[i].floor() - current[i]).abs() < std::f32::EPSILON
+                && current_direction[i] < 0.0
+            {
                 current_i[i] -= 1;
             }
         }
 
         // lambda that checks if we hit something
-        let hit = |[x, y, z]: [i64; 3]| -> Option<Ray<Self>>{
-            if x >= 0 && x < Self::WIDTH as i64 &&
-                y >= 0 && y < Self::WIDTH as i64 &&
-                z >= 0 && z < Self::WIDTH as i64 {
+        let hit = |[x, y, z]: [i64; 3]| -> Option<Ray<Self>> {
+            if x >= 0
+                && x < Self::WIDTH as i64
+                && y >= 0
+                && y < Self::WIDTH as i64
+                && z >= 0
+                && z < Self::WIDTH as i64
+            {
                 let i = x as usize + y as usize * Self::DY + z as usize * Self::DZ;
                 match self.get(i) {
                     Some(voxel) => {
@@ -246,8 +266,8 @@ impl<T: Data> Raycast for Voxel<T> {
                             let s = scaling(&vec3(sc, sc, sc));
                             let t = translation(&vec3(x as f32 * sc, y as f32 * sc, z as f32 * sc));
                             let r = Ray {
-                                transform: ray.transform*t*s, 
-                                origin: ray.origin, 
+                                transform: ray.transform * t * s,
+                                origin: ray.origin,
                                 direction: ray.direction,
                                 index: Some(i),
                                 marker: PhantomData,
@@ -260,7 +280,7 @@ impl<T: Data> Raycast for Voxel<T> {
                         } else {
                             None
                         }
-                    },
+                    }
                     None => None,
                 }
             } else {
@@ -270,7 +290,7 @@ impl<T: Data> Raycast for Voxel<T> {
 
         // check the voxel that we're inside of first.
         if let Some(hit) = hit(current_i) {
-            return Some(hit)
+            return Some(hit);
         }
 
         // then we'll find out the nearest block hit
@@ -284,8 +304,8 @@ impl<T: Data> Raycast for Voxel<T> {
 
             // advance by the distance of the nearest intersection
             for d in 0..3 {
-                let e = (d+1)%3;
-                let f = (d+2)%3;
+                let e = (d + 1) % 3;
+                let f = (d + 2) % 3;
                 if i[d] <= i[e] && i[d] <= i[f] {
                     current += current_direction * i[d];
                     if current_direction[d] < 0.0 {
@@ -308,11 +328,11 @@ impl<T: Data> Raycast for Voxel<T> {
         None
     }
 
-    fn get(&self, ray: &Ray<Self>) -> Option<&Self> { 
+    fn get(&self, ray: &Ray<Self>) -> Option<&Self> {
         ray.index.and_then(move |index| self.get(index))
     }
 
-    fn get_mut(&mut self, ray: &Ray<Self>) -> Option<&mut Self> { 
+    fn get_mut(&mut self, ray: &Ray<Self>) -> Option<&mut Self> {
         ray.index.and_then(move |index| self.get_mut(index))
     }
 }
@@ -338,6 +358,6 @@ fn intersect(position: f32, direction: f32) -> f32 {
             }
         };
 
-        (target-position) / direction
+        (target - position) / direction
     }
 }

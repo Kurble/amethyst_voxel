@@ -1,31 +1,28 @@
 use amethyst::prelude::*;
 use amethyst::{
+    assets::{PrefabLoader, PrefabLoaderSystemDesc, RonFormat},
+    controls::FlyControlBundle,
+    core::transform::{Transform, TransformBundle},
     ecs::prelude::*,
-	assets::{PrefabLoader, PrefabLoaderSystemDesc, RonFormat},
-	core::transform::{TransformBundle, Transform},
-    window::{ScreenDimensions},
-    controls::{FlyControlBundle},
-	renderer::{
-		palette::{Srgb},
-	    plugins::{RenderToWindow, RenderSkybox},
-	    types::DefaultBackend,
-	    rendy::{
-            mesh::{Normal, Position, TexCoord},
-        },
-	    RenderingBundle,
-        ActiveCamera,
-        Camera,
-	},
-	utils::{
-		application_root_dir,
-	},
-	input::{VirtualKeyCode, InputBundle, /*InputHandler,*/ StringBindings, is_key_down, is_mouse_button_down},
+    input::{
+        is_key_down, is_mouse_button_down, InputBundle, /*InputHandler,*/ StringBindings,
+        VirtualKeyCode,
+    },
+    renderer::{
+        palette::Srgb,
+        plugins::{RenderSkybox, RenderToWindow},
+        rendy::mesh::{Normal, Position, TexCoord},
+        types::DefaultBackend,
+        ActiveCamera, Camera, RenderingBundle,
+    },
+    utils::application_root_dir,
+    utils::scene::BasicScenePrefab,
+    window::ScreenDimensions,
     winit::MouseButton,
-	utils::{scene::BasicScenePrefab},
 };
 use amethyst_voxel::prelude::*;
-use std::mem::replace;
 use nalgebra_glm::*;
+use std::mem::replace;
 
 type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>), f32>;
 
@@ -42,9 +39,7 @@ struct Example {
 
 impl Example {
     pub fn new() -> Self {
-        Self {
-            voxels: None,
-        }
+        Self { voxels: None }
     }
 }
 
@@ -61,7 +56,9 @@ impl SimpleState for Example {
                 "vox/monu9.vox",
                 VoxFormat,
                 (),
-                &data.world.read_resource::<amethyst::assets::AssetStorage<Model>>(),
+                &data
+                    .world
+                    .read_resource::<amethyst::assets::AssetStorage<Model>>(),
             )
         };
 
@@ -69,24 +66,29 @@ impl SimpleState for Example {
 
         let source = ModelSource::new(model_handle);
 
-        self.voxels = Some(data.world
-            .create_entity()
-            .with(world)
-            .with(source)
-            .with(Transform::default())
-            .build());
+        self.voxels = Some(
+            data.world
+                .create_entity()
+                .with(world)
+                .with(source)
+                .with(Transform::default())
+                .build(),
+        );
     }
 
     fn update(&mut self, _: &mut StateData<GameData>) -> SimpleTrans {
         Trans::None
     }
 
-    fn handle_event(&mut self, state: StateData<'_, GameData<'_, '_>>, event: StateEvent) -> SimpleTrans {
+    fn handle_event(
+        &mut self,
+        state: StateData<'_, GameData<'_, '_>>,
+        event: StateEvent,
+    ) -> SimpleTrans {
         if let StateEvent::Window(event) = event {
             if is_key_down(&event, VirtualKeyCode::Escape) {
                 Trans::Quit
             } else if is_mouse_button_down(&event, MouseButton::Left) {
-
                 let mut store = state.world.write_storage::<VoxelWorld<ExampleVoxel>>();
                 let screen = state.world.read_resource::<ScreenDimensions>();
                 let active_camera = state.world.read_resource::<ActiveCamera>();
@@ -94,18 +96,23 @@ impl SimpleState for Example {
                 let transforms = state.world.read_storage::<Transform>();
 
                 let (origin, direction) = {
-                    let (camera, transform) = active_camera.entity
+                    let (camera, transform) = active_camera
+                        .entity
                         .as_ref()
-                        .and_then(|ac| cameras.get(*ac).and_then(|c| transforms.get(*ac).map(|t| (c,t))))
-                        .or_else(|| (&cameras, &transforms)
-                            .join()
-                            .next())
+                        .and_then(|ac| {
+                            cameras
+                                .get(*ac)
+                                .and_then(|c| transforms.get(*ac).map(|t| (c, t)))
+                        })
+                        .or_else(|| (&cameras, &transforms).join().next())
                         .unwrap();
 
                     //let mouse = input.mouse_position().map(|(x, y)| [x, y].into()).unwrap();
                     let screen = screen.diagonal();
                     let point = [screen.x * 0.5, screen.y * 0.5, 1.0].into();
-                    let point = camera.projection().screen_to_world_point(point, screen, transform);
+                    let point = camera
+                        .projection()
+                        .screen_to_world_point(point, screen, transform);
                     let origin = transform.global_matrix().column(3).xyz();
                     let direction = (vec3(point.x, point.y, point.z) - origin).normalize();
 
@@ -141,7 +148,7 @@ fn main() -> amethyst::Result<()> {
     let key_bindings_path = app_root.join("examples/config/input.ron");
 
     let game_data = GameDataBuilder::default()
-    	.with_system_desc(PrefabLoaderSystemDesc::<MyPrefabData>::default(), "", &[])
+        .with_system_desc(PrefabLoaderSystemDesc::<MyPrefabData>::default(), "", &[])
         .with_bundle(
             FlyControlBundle::<StringBindings>::new(
                 Some(String::from("move_x")),
@@ -151,30 +158,29 @@ fn main() -> amethyst::Result<()> {
             .with_sensitivity(0.1, 0.1)
             .with_speed(5.0),
         )?
-    	.with_bundle(TransformBundle::new().with_dep(&["fly_movement"]))?
-    	.with_bundle(
-            InputBundle::<StringBindings>::new()
-                .with_bindings_from_file(&key_bindings_path)?,
+        .with_bundle(TransformBundle::new().with_dep(&["fly_movement"]))?
+        .with_bundle(
+            InputBundle::<StringBindings>::new().with_bindings_from_file(&key_bindings_path)?,
         )?
-    	.with_bundle(VoxelBundle::new()
-            .with_voxel::<ExampleVoxel>()
-            .with_source::<ExampleVoxel, ModelSource>()
+        .with_bundle(
+            VoxelBundle::new()
+                .with_voxel::<ExampleVoxel>()
+                .with_source::<ExampleVoxel, ModelSource>(),
         )?
-    	.with_bundle(
-        	RenderingBundle::<DefaultBackend>::new()
-	            .with_plugin(
-	                RenderToWindow::from_config_path(display_config_path)
-	                    .with_clear([0.0, 0.0, 0.0, 1.0]),
-	            )
-	            .with_plugin(RenderVoxelPbr::<ExampleVoxel>::default())
+        .with_bundle(
+            RenderingBundle::<DefaultBackend>::new()
+                .with_plugin(
+                    RenderToWindow::from_config_path(display_config_path)
+                        .with_clear([0.0, 0.0, 0.0, 1.0]),
+                )
+                .with_plugin(RenderVoxelPbr::<ExampleVoxel>::default())
                 .with_plugin(RenderSkybox::with_colors(
                     Srgb::new(0.82, 0.51, 0.50),
                     Srgb::new(0.18, 0.11, 0.85),
                 )),
-    	)?;
+        )?;
 
-    let mut game = Application::build(assets_directory, Example::new())?
-        .build(game_data)?;
+    let mut game = Application::build(assets_directory, Example::new())?.build(game_data)?;
     game.run();
 
     Ok(())

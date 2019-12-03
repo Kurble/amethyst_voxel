@@ -1,23 +1,20 @@
-use std::borrow::Cow;
-use std::iter::repeat;
 use amethyst::{
+    assets::{AssetStorage, Handle, Loader},
     ecs::prelude::*,
-    assets::{Loader, Handle, AssetStorage},
     renderer::{
-        types::{Texture},
         mtl::{Material, MaterialDefaults},
         palette::*,
         rendy::{
             hal::image::{Kind, ViewKind},
-            texture::{
-                TextureBuilder,
-                pixel::*,
-            },
+            texture::{pixel::*, TextureBuilder},
         },
+        types::Texture,
     },
 };
+use std::borrow::Cow;
+use std::iter::repeat;
 
-/// A material. For a better explanation of the properties, 
+/// A material. For a better explanation of the properties,
 /// take a look at the amethyst PBR model.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VoxelMaterial {
@@ -49,17 +46,16 @@ pub struct VoxelMaterialStorage {
 pub struct VoxelMaterialSystem;
 
 impl VoxelMaterialStorage {
-    /// Create a new material. 
+    /// Create a new material.
     /// If an identical material already exists, it's ID will be returned instead.
     pub fn create(&mut self, material: VoxelMaterial) -> VoxelMaterialId {
-        let result = self.materials
-            .iter()
-            .enumerate()
-            .find_map(|(i, m)| if m.eq(&material) {
+        let result = self.materials.iter().enumerate().find_map(|(i, m)| {
+            if m.eq(&material) {
                 Some(i as u32)
             } else {
                 None
-            });
+            }
+        });
 
         VoxelMaterialId(result.unwrap_or_else(|| {
             self.materials.push(material);
@@ -103,26 +99,25 @@ impl Default for VoxelMaterialStorage {
     }
 }
 
-fn build_texture<'a, I: Iterator<Item=[u8;4]>>(width: usize, iter: I) -> TextureBuilder<'a> {
+fn build_texture<'a, I: Iterator<Item = [u8; 4]>>(width: usize, iter: I) -> TextureBuilder<'a> {
     let size = width * width;
     TextureBuilder::new()
         .with_kind(Kind::D2(width as u32, width as u32, 1, 1))
         .with_view_kind(ViewKind::D2)
         .with_data_width(width as u32)
         .with_data_height(width as u32)
-        .with_data(Cow::<[Rgba8Unorm]>::from(iter
-            .take(size)
-            .map(|p| {
-                Srgba::new(p[0], p[1], p[2], p[3]).into()
-            })
-            .collect::<Vec<_>>()))
+        .with_data(Cow::<[Rgba8Unorm]>::from(
+            iter.take(size)
+                .map(|p| Srgba::new(p[0], p[1], p[2], p[3]).into())
+                .collect::<Vec<_>>(),
+        ))
 }
 
 #[allow(clippy::type_complexity)]
 impl<'a> System<'a> for VoxelMaterialSystem {
     type SystemData = (
-        Write<'a, VoxelMaterialStorage>, 
-        ReadExpect<'a, MaterialDefaults>, 
+        Write<'a, VoxelMaterialStorage>,
+        ReadExpect<'a, MaterialDefaults>,
         ReadExpect<'a, Loader>,
         Read<'a, AssetStorage<Texture>>,
         Read<'a, AssetStorage<Material>>,
@@ -132,38 +127,49 @@ impl<'a> System<'a> for VoxelMaterialSystem {
         if storage.dirty {
             storage.size = {
                 let mut size = 32;
-                while storage.materials.len() > size*size {
+                while storage.materials.len() > size * size {
                     size *= 2;
                 }
                 size
             };
 
             let albedo = loader.load_from_data(
-                build_texture(storage.size, storage.materials
-                    .iter()
-                    .map(|m| [m.albedo[0], m.albedo[1], m.albedo[2], m.alpha])
-                    .chain(repeat([255,0,255,255]))
-                ).into(),
+                build_texture(
+                    storage.size,
+                    storage
+                        .materials
+                        .iter()
+                        .map(|m| [m.albedo[0], m.albedo[1], m.albedo[2], m.alpha])
+                        .chain(repeat([255, 0, 255, 255])),
+                )
+                .into(),
                 (),
                 &textures,
             );
-            
             let emission = loader.load_from_data(
-                build_texture(storage.size, storage.materials
-                    .iter()
-                    .map(|m| [m.emission[0], m.emission[1], m.emission[2], 255])
-                    .chain(repeat([0,0,0,255]))
-                ).into(),
+                build_texture(
+                    storage.size,
+                    storage
+                        .materials
+                        .iter()
+                        .map(|m| [m.emission[0], m.emission[1], m.emission[2], 255])
+                        .chain(repeat([0, 0, 0, 255])),
+                )
+                .into(),
                 (),
                 &textures,
             );
 
             let metallic_roughness = loader.load_from_data(
-                build_texture(storage.size, storage.materials
-                    .iter()
-                    .map(|m| [0, m.roughness, m.metallic, 255])
-                    .chain(repeat([0,240,8,255]))
-                ).into(),
+                build_texture(
+                    storage.size,
+                    storage
+                        .materials
+                        .iter()
+                        .map(|m| [0, m.roughness, m.metallic, 255])
+                        .chain(repeat([0, 240, 8, 255])),
+                )
+                .into(),
                 (),
                 &textures,
             );

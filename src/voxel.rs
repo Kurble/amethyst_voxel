@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use std::ops::{Deref, DerefMut};
 use std::iter::FromIterator;
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use crate::material::VoxelMaterialId;
 
@@ -10,14 +10,14 @@ pub trait Data: 'static + Clone + Send + Sync {
     /// A value of 4 means that 2^4=16 subvoxels would be created at every axis, for a total of 16^3=4096 subvoxels.
     const SUBDIV: usize;
 
-    /// Informs the triangulator whether the voxel that owns this data should be considered 
+    /// Informs the triangulator whether the voxel that owns this data should be considered
     ///  as a solid voxel or not.
     /// A solid voxel is a voxel that can't be seen through in any way.
     fn solid(&self) -> bool {
         false
     }
 
-    /// Informs the triangulator whether the voxel that owns this data should be considered empty. 
+    /// Informs the triangulator whether the voxel that owns this data should be considered empty.
     /// Empty voxels are not voxelized.
     fn empty(&self) -> bool {
         false
@@ -72,20 +72,19 @@ impl<T: Data> Voxel<T> {
     pub fn index_to_coord(index: usize) -> (usize, usize, usize) {
         let x = index & Self::LAST;
         let y = (index >> T::SUBDIV) & Self::LAST;
-        let z = (index >> (T::SUBDIV*2)) & Self::LAST;
+        let z = (index >> (T::SUBDIV * 2)) & Self::LAST;
         (x, y, z)
     }
 
     /// Construct a new, empty voxel. The voxel will have no content at all.
     pub fn new(data: T) -> Self {
-        Voxel::Empty {
-            data
-        }
+        Voxel::Empty { data }
     }
 
     /// Construct a Voxel::Detail from an iterator.
-    pub fn from_iter<I>(data: T, iter: I) -> Self where
-        I: IntoIterator<Item = Self>
+    pub fn from_iter<I>(data: T, iter: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
     {
         Voxel::Detail {
             data,
@@ -95,10 +94,7 @@ impl<T: Data> Voxel<T> {
 
     /// Construct a Voxel::Material voxel. The voxel will be filled with one single material.
     pub fn filled(data: T, material: VoxelMaterialId) -> Self {
-        Voxel::Material {
-            data,
-            material
-        }
+        Voxel::Material { data, material }
     }
 
     /// Retrieve a reference to subvoxel at index.
@@ -122,13 +118,18 @@ impl<T: Data> Voxel<T> {
 
 impl<T: Data + Default> From<VoxelMaterialId> for Voxel<T> {
     fn from(material: VoxelMaterialId) -> Voxel<T> {
-        Voxel::Material { data: Default::default(), material }
+        Voxel::Material {
+            data: Default::default(),
+            material,
+        }
     }
 }
 
 impl<T: Data + Default> Default for Voxel<T> {
     fn default() -> Voxel<T> {
-        Voxel::Empty { data: Default::default() }
+        Voxel::Empty {
+            data: Default::default(),
+        }
     }
 }
 
@@ -137,9 +138,9 @@ impl<T: Data> Deref for Voxel<T> {
 
     fn deref(&self) -> &T {
         match *self {
-            Voxel::Empty { ref data, .. } |
-            Voxel::Detail { ref data, .. } |
-            Voxel::Material { ref data, .. } => data,
+            Voxel::Empty { ref data, .. }
+            | Voxel::Detail { ref data, .. }
+            | Voxel::Material { ref data, .. } => data,
         }
     }
 }
@@ -147,9 +148,9 @@ impl<T: Data> Deref for Voxel<T> {
 impl<T: Data> DerefMut for Voxel<T> {
     fn deref_mut(&mut self) -> &mut T {
         match *self {
-            Voxel::Empty { ref mut data, .. } |
-            Voxel::Detail { ref mut data, .. } |
-            Voxel::Material { ref mut data, .. } => data,
+            Voxel::Empty { ref mut data, .. }
+            | Voxel::Detail { ref mut data, .. }
+            | Voxel::Material { ref mut data, .. } => data,
         }
     }
 }

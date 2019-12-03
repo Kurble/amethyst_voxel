@@ -1,15 +1,15 @@
+use crate::pass::*;
 use crate::voxel::Data;
 use crate::world::VoxelRender;
-use crate::pass::*;
 
 use amethyst::{
+    core::ecs::{DispatcherBuilder, World, WorldExt},
+    error::Error,
     renderer::{
         bundle::{RenderOrder, RenderPlan, RenderPlugin, Target},
         pass::Base3DPassDef,
         Backend, Factory,
     },
-    core::ecs::{DispatcherBuilder, World, WorldExt},
-    error::{Error},
 };
 use rendy::graph::render::RenderGroupDesc;
 
@@ -30,7 +30,8 @@ impl<D: Base3DPassDef, V: Data> RenderVoxel<D, V> {
     }
 }
 
-impl<B, D, V> RenderPlugin<B> for RenderVoxel<D, V> where
+impl<B, D, V> RenderPlugin<B> for RenderVoxel<D, V>
+where
     B: Backend,
     D: Base3DPassDef,
     V: Data,
@@ -52,7 +53,10 @@ impl<B, D, V> RenderPlugin<B> for RenderVoxel<D, V> where
         _world: &World,
     ) -> Result<(), Error> {
         plan.extend_target(self.target, move |ctx| {
-            ctx.add(RenderOrder::Opaque, DrawVoxelDesc::<B, D, V>::new().builder())?;
+            ctx.add(
+                RenderOrder::Opaque,
+                DrawVoxelDesc::<B, D, V>::new().builder(),
+            )?;
             Ok(())
         });
         Ok(())
