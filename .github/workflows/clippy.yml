@@ -1,6 +1,6 @@
 on: [push, pull_request]
 
-name: CI
+name: Clippy
 
 jobs:
   check:
@@ -15,4 +15,4 @@ jobs:
           override: true
       - uses: actions-rs/cargo@v1
         with:
-          command: check
+          command: clippy
