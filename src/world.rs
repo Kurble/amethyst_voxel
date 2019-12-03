@@ -1,16 +1,16 @@
 use crate::voxel::*;
-use futures::{Future, Async};
 use amethyst::{
-    core::{transform::Transform},
-    ecs::prelude::{Join, Read, ReadStorage, WriteStorage, System, SystemData, Component},
+    core::transform::Transform,
+    ecs::prelude::{Component, Join, Read, ReadStorage, System, SystemData, WriteStorage},
     renderer::{ActiveCamera, Camera},
 };
-use std::mem::replace;
-use std::marker::PhantomData;
+use futures::{Async, Future};
 use std::error::Error;
+use std::marker::PhantomData;
+use std::mem::replace;
 use std::ops::{Deref, DerefMut};
 
-/// A dynamically loaded infinite world component. 
+/// A dynamically loaded infinite world component.
 /// Voxel data is pulled from a VoxelSource component on the same entity.
 /// The voxel world has a rendering range around the viewpoint of the current camera, which is automatically updated.
 pub struct VoxelWorld<T: Data> {
@@ -34,7 +34,8 @@ pub struct VoxelRender<T: Data> {
 }
 
 /// Future alias for root voxels that will be loaded in the future.
-pub type VoxelFuture<T> = Box<dyn Future<Item=Voxel<T>, Error=Box<dyn Error+Send+Sync>>+Send+Sync>;
+pub type VoxelFuture<T> =
+    Box<dyn Future<Item = Voxel<T>, Error = Box<dyn Error + Send + Sync>> + Send + Sync>;
 
 /// Voxel data source for `VoxelWorld`
 pub trait VoxelSource<'a, T: Data> {
@@ -51,13 +52,14 @@ pub trait VoxelSource<'a, T: Data> {
     /// to the voxel. When a chunk is removed, this function will be called dispose of the chunk properly.
     fn drop(&mut self, coord: [isize; 3], voxel: Voxel<T>);
 
-    /// Retrieve the limits in chunks that this VoxelSource can generate. 
-    /// Chunks that have neighbours according to the limits, but have no neighbours in the `VoxelWorld` 
+    /// Retrieve the limits in chunks that this VoxelSource can generate.
+    /// Chunks that have neighbours according to the limits, but have no neighbours in the `VoxelWorld`
     /// will not be rendered to ensure that rendering glitches don't occur.
     fn limits(&self) -> Limits;
 }
 
-pub struct WorldSystem<T: Data, S: for<'s> VoxelSource<'s, T>>(PhantomData<(T,S)>);
+#[derive(Default)]
+pub struct WorldSystem<T: Data, S: for<'s> VoxelSource<'s, T>>(PhantomData<(T, S)>);
 
 /// Chunk coordinates to denote the rendering limits of a `VoxelWorld`.
 /// `None` specifies a non-existing limit, the world will be infinite in that direction.
@@ -80,10 +82,15 @@ impl<T: Data> VoxelWorld<T> {
     pub fn new(dims: [usize; 3], scale: f32) -> Self {
         Self {
             loaded: false,
-            limits: Limits { from: [None; 3], to: [None; 3] },
+            limits: Limits {
+                from: [None; 3],
+                to: [None; 3],
+            },
             visibility: [0.0; 6],
             view_range: 0.0,
-            data: (0..dims[0]*dims[1]*dims[2]).map(|_| Chunk::NotNeeded).collect(),
+            data: (0..dims[0] * dims[1] * dims[2])
+                .map(|_| Chunk::NotNeeded)
+                .collect(),
             dims,
             origin: [0, 0, 0],
             scale,
@@ -104,15 +111,22 @@ impl<T: Data> VoxelWorld<T> {
 
     fn available(&self, axis: usize, index: usize, offset: usize) -> bool {
         if axis < 3 {
-            let x = (index/offset)%self.dims[axis];
+            let x = (index / offset) % self.dims[axis];
             let pos = self.origin[axis] + x as isize;
 
-            let left = self.limits.from[axis].map(|limit| pos <= limit).unwrap_or(false);
-            let left = left || (x > 0 && self.available(axis+1, index - offset, offset * self.dims[axis]));
-            let right = self.limits.to[axis].map(|limit| pos >= limit).unwrap_or(false);
-            let right = right || (x < self.dims[axis]-1 && self.available(axis+1, index + offset, offset * self.dims[axis]));
+            let left = self.limits.from[axis]
+                .map(|limit| pos <= limit)
+                .unwrap_or(false);
+            let left = left
+                || (x > 0 && self.available(axis + 1, index - offset, offset * self.dims[axis]));
+            let right = self.limits.to[axis]
+                .map(|limit| pos >= limit)
+                .unwrap_or(false);
+            let right = right
+                || (x < self.dims[axis] - 1
+                    && self.available(axis + 1, index + offset, offset * self.dims[axis]));
 
-            left && right && self.available(axis+1, index, offset * self.dims[axis])
+            left && right && self.available(axis + 1, index, offset * self.dims[axis])
         } else {
             self.data[index].get().is_some()
         }
@@ -134,8 +148,9 @@ impl<T: Data> VoxelRender<T> {
     }
 
     /// Create a new `VoxelRender` component with a new `Voxel<T>` created from an iterator.
-    pub fn from_iter<I>(data: T, iter: I) -> Self where
-        I: IntoIterator<Item = Voxel<T>>
+    pub fn from_iter<I>(data: T, iter: I) -> Self
+    where
+        I: IntoIterator<Item = Voxel<T>>,
     {
         VoxelRender {
             data: Voxel::from_iter(data, iter),
@@ -176,23 +191,19 @@ impl<T: Data> Chunk<T> {
     pub fn get_mut(&mut self) -> Option<&mut VoxelRender<T>> {
         match *self {
             Chunk::NotNeeded => None,
-            Chunk::NotReady(ref mut fut) => {
-                match fut.poll() {
-                    Ok(Async::Ready(voxel)) => {
-                        *self = Chunk::Ready(VoxelRender::new(voxel));
-                        match *self {
-                            Chunk::Ready(ref mut voxel) => Some(voxel),
-                            _ => unreachable!(),
-                        }
-                    },
-                    Ok(Async::NotReady) => {
-                        None
-                    },
-                    Err(e) => {
-                        println!("Chunk failed to load: {}", e);
-                        *self = Chunk::NotNeeded;
-                        None
-                    },
+            Chunk::NotReady(ref mut fut) => match fut.poll() {
+                Ok(Async::Ready(voxel)) => {
+                    *self = Chunk::Ready(VoxelRender::new(voxel));
+                    match *self {
+                        Chunk::Ready(ref mut voxel) => Some(voxel),
+                        _ => unreachable!(),
+                    }
+                }
+                Ok(Async::NotReady) => None,
+                Err(e) => {
+                    println!("Chunk failed to load: {}", e);
+                    *self = Chunk::NotNeeded;
+                    None
                 }
             },
             Chunk::Ready(ref mut voxel) => Some(voxel),
@@ -207,6 +218,7 @@ impl<T: Data, S: for<'s> VoxelSource<'s, T>> WorldSystem<T, S> {
 }
 
 impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for WorldSystem<T, S> {
+    #[allow(clippy::type_complexity)]
     type SystemData = (
         WriteStorage<'s, VoxelWorld<T>>,
         WriteStorage<'s, S>,
@@ -216,16 +228,17 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
         <S as VoxelSource<'s, T>>::SystemData,
     );
 
-    fn run(&mut self, (mut worlds, mut sources, active_camera, cameras, transforms, mut source_data): Self::SystemData) {
+    fn run(
+        &mut self,
+        (mut worlds, mut sources, active_camera, cameras, transforms, mut source_data): Self::SystemData,
+    ) {
         let identity = Transform::default();
 
-        let transform = active_camera.entity
+        let transform = active_camera
+            .entity
             .as_ref()
             .and_then(|ac| transforms.get(*ac))
-            .or_else(|| (&cameras, &transforms)
-                .join()
-                .next()
-                .map(|(_c, t)| t))
+            .or_else(|| (&cameras, &transforms).join().next().map(|(_c, t)| t))
             .unwrap_or(&identity);
 
         let center = {
@@ -239,49 +252,56 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
 
             let origin = {
                 let f = |i: usize| {
-                    let origin = if center[i] < 0.0 {
-                        (center[i] / world.scale).floor() as isize - (world.dims[i]/2) as isize
-                    } else {
-                        (center[i] / world.scale).floor() as isize - (world.dims[i]/2) as isize
-                    };
+                    let origin =
+                        (center[i] / world.scale).floor() as isize - (world.dims[i] / 2) as isize;
                     origin
                         .max(limits.from[i].unwrap_or(origin))
                         .min(limits.to[i].unwrap_or(origin))
                 };
                 [f(0), f(1), f(2)]
-            };     
+            };
 
-            if !world.loaded || 
-                origin[0] != world.origin[0] || 
-                origin[1] != world.origin[1] || 
-                origin[2] != world.origin[2] 
+            if !world.loaded
+                || origin[0] != world.origin[0]
+                || origin[1] != world.origin[1]
+                || origin[2] != world.origin[2]
             {
                 world.loaded = true;
 
-                for i in 0..3 {
-                    world.visibility[i*2] = center[i] - world.scale * (world.dims[i]/2) as f32;
-                    world.visibility[i*2+1] = world.visibility[i*2] + world.scale * world.dims[i] as f32;
+                for (i, &center) in center.iter().enumerate() {
+                    world.visibility[i * 2] = center - world.scale * (world.dims[i] / 2) as f32;
+                    world.visibility[i * 2 + 1] =
+                        world.visibility[i * 2] + world.scale * world.dims[i] as f32;
                 }
 
                 let offset = {
                     let f = |i| origin[i] - world.origin[i];
                     [f(0), f(1), f(2)]
                 };
-                let dims = [world.dims[0] as isize, world.dims[1] as isize, world.dims[2] as isize];
+                let dims = [
+                    world.dims[0] as isize,
+                    world.dims[1] as isize,
+                    world.dims[2] as isize,
+                ];
 
-                fn limit_visibility(v: &mut [f32; 6], center: [f32; 3], limit: [f32; 3], scale: f32) {
+                fn limit_visibility(
+                    v: &mut [f32; 6],
+                    center: [f32; 3],
+                    limit: [f32; 3],
+                    scale: f32,
+                ) {
                     for i in 0..3 {
                         if limit[i] + scale < center[i] {
-                            v[i*2] = v[i*2].max(limit[i] + scale);
+                            v[i * 2] = v[i * 2].max(limit[i] + scale);
                         } else {
-                            v[i*2+1] = v[i*2+1].min(limit[i]);
+                            v[i * 2 + 1] = v[i * 2 + 1].min(limit[i]);
                         }
                     }
                 }
 
                 fn for_loop(to: isize, reverse: bool, mut f: impl FnMut(isize)) {
                     let range = 0..to;
-                    if reverse { 
+                    if reverse {
                         for i in range.rev() {
                             f(i);
                         }
@@ -298,11 +318,14 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                         let exists = exists && y + offset[1] >= 0 && y + offset[1] < dims[1];
                         for_loop(dims[0], offset[0] < 0, |x| {
                             let exists = exists && x + offset[0] >= 0 && x + offset[0] < dims[0];
-                            let index = (z*dims[0]*dims[1]+y*dims[0]+x) as usize;
+                            let index = (z * dims[0] * dims[1] + y * dims[0] + x) as usize;
 
                             // retrieve the existing chunk
                             let moved_chunk = if exists {
-                                let index = ((z+offset[2])*dims[0]*dims[1]+(y+offset[1])*dims[0]+(x+offset[0])) as usize;
+                                let index = ((z + offset[2]) * dims[0] * dims[1]
+                                    + (y + offset[1]) * dims[0]
+                                    + (x + offset[0]))
+                                    as usize;
                                 replace(&mut world.data[index], Chunk::NotNeeded)
                             } else {
                                 Chunk::NotNeeded
@@ -312,33 +335,43 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                             let moved_chunk = match moved_chunk {
                                 Chunk::NotNeeded => {
                                     // todo: *check* if the chunk needs to be loaded
-                                    let coord = [x+origin[0], y+origin[1], z+origin[2]];
-                                    limit_visibility(&mut world.visibility, center, [
-                                        coord[0] as f32 * world.scale, 
-                                        coord[1] as f32 * world.scale, 
-                                        coord[2] as f32 * world.scale
-                                    ], world.scale);
+                                    let coord = [x + origin[0], y + origin[1], z + origin[2]];
+                                    limit_visibility(
+                                        &mut world.visibility,
+                                        center,
+                                        [
+                                            coord[0] as f32 * world.scale,
+                                            coord[1] as f32 * world.scale,
+                                            coord[2] as f32 * world.scale,
+                                        ],
+                                        world.scale,
+                                    );
                                     Chunk::NotReady(source.load(coord))
-                                },
+                                }
                                 Chunk::NotReady(future) => {
-                                    let coord = [x+origin[0], y+origin[1], z+origin[2]];
-                                    limit_visibility(&mut world.visibility, center, [
-                                        coord[0] as f32 * world.scale, 
-                                        coord[1] as f32 * world.scale, 
-                                        coord[2] as f32 * world.scale
-                                    ], world.scale);
+                                    let coord = [x + origin[0], y + origin[1], z + origin[2]];
+                                    limit_visibility(
+                                        &mut world.visibility,
+                                        center,
+                                        [
+                                            coord[0] as f32 * world.scale,
+                                            coord[1] as f32 * world.scale,
+                                            coord[2] as f32 * world.scale,
+                                        ],
+                                        world.scale,
+                                    );
                                     Chunk::NotReady(future)
-                                },
+                                }
                                 Chunk::Ready(voxel) => Chunk::Ready(voxel),
                             };
 
                             // install the chunk
                             match replace(&mut world.data[index], moved_chunk) {
-                                Chunk::NotReady(_future) => { /* this is a problem */ },
+                                Chunk::NotReady(_future) => { /* this is a problem */ }
                                 Chunk::Ready(voxel) => {
-                                    let coord = [x+origin[0], y+origin[1], z+origin[2]];
+                                    let coord = [x + origin[0], y + origin[1], z + origin[2]];
                                     source.drop(coord, voxel.data);
-                                },
+                                }
                                 Chunk::NotNeeded => (),
                             }
                         })
@@ -349,9 +382,13 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
             }
 
             // todo: find out view range
-            world.view_range = world.visibility.iter().enumerate().fold(1000.0, |view_range, (i, visibility)| {
-                view_range.min((visibility - center[i/2]).abs())
-            });
+            world.view_range = world
+                .visibility
+                .iter()
+                .enumerate()
+                .fold(1000.0, |view_range, (i, visibility)| {
+                    view_range.min((visibility - center[i / 2]).abs())
+                });
 
             source.process(&mut source_data);
         }

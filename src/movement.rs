@@ -1,20 +1,18 @@
-use std::marker::PhantomData;
-use amethyst::{
-	ecs::prelude::*,
-	core::transform::Transform,
-};
-use nalgebra_glm::*;
 use crate::{
+	raycast::*,
 	voxel::{Data, Voxel},
 	world::VoxelWorld,
-	raycast::*,
 };
+use amethyst::{core::transform::Transform, ecs::prelude::*};
+use nalgebra_glm::*;
+use std::marker::PhantomData;
 
-pub struct Pos { 
-	pub position: Vec3, 
+pub struct Pos {
+	pub position: Vec3,
 	pub velocity: Vec3,
 }
 
+#[derive(Default)]
 pub struct MovementSystem<V: Data> {
 	marker: PhantomData<V>,
 }
@@ -31,7 +29,10 @@ impl<V: Data> MovementSystem<V> {
 	}
 }
 
-impl<'a, V: Data> System<'a> for MovementSystem<V> where Voxel<V>: Raycast {
+impl<'a, V: Data> System<'a> for MovementSystem<V>
+where
+	Voxel<V>: Raycast,
+{
 	type SystemData = (
 		ReadStorage<'a, VoxelWorld<V>>,
 		WriteStorage<'a, Pos>,

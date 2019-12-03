@@ -1,20 +1,27 @@
-
 use amethyst::renderer::{
     batch::{GroupIterator, TwoLevelBatch},
+    pass::Base3DPassDef,
     pipeline::{PipelineDescBuilder, PipelinesBuilder},
-    pass::{Base3DPassDef},
     pod::{SkinnedVertexArgs, VertexArgs},
     resources::Tint,
+    skinning::JointCombined,
     submodules::{DynamicVertexBuffer, EnvironmentSub, MaterialId, MaterialSub, SkinningSub},
     types::{Backend, Mesh},
     util,
-    skinning::{JointCombined},
 };
 
+use crate::{
+    ambient_occlusion::*,
+    context::{Context, VoxelContext, WorldContext},
+    material::VoxelMaterialStorage,
+    voxel::Data,
+    world::{Chunk, VoxelRender, VoxelWorld},
+};
 use amethyst::core::{
-    ecs::{World, Join, Read, ReadStorage, WriteStorage, SystemData},
+    ecs::{Join, Read, ReadStorage, SystemData, World, WriteStorage},
     transform::Transform,
 };
+use nalgebra_glm::*;
 use rendy::{
     command::{QueueId, RenderPassEncoder},
     factory::Factory,
@@ -22,21 +29,13 @@ use rendy::{
         render::{PrepareResult, RenderGroup, RenderGroupDesc},
         GraphContext, NodeBuffer, NodeImage,
     },
-    hal::{self, format::Format, device::Device, pso},
-    mesh::{AsVertex, AsAttribute, VertexFormat, MeshBuilder},
+    hal::{self, device::Device, format::Format, pso},
+    mesh::{AsAttribute, AsVertex, MeshBuilder, VertexFormat},
     shader::{Shader, SpirvShader},
-    util::types::vertex::{Position, Normal, Tangent},
+    util::types::vertex::{Normal, Position, Tangent},
 };
 use smallvec::SmallVec;
 use std::marker::PhantomData;
-use crate::{
-    voxel::Data,
-    context::{Context, VoxelContext, WorldContext},
-    world::{VoxelWorld, VoxelRender, Chunk},
-    material::VoxelMaterialStorage,
-    ambient_occlusion::*,
-};
-use nalgebra_glm::*;
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug(bound = ""), Default(bound = ""))]
@@ -77,12 +76,13 @@ impl AsAttribute for Surface {
 impl<B: Backend, T: Base3DPassDef, V: Data> DrawVoxelDesc<B, T, V> {
     pub fn new() -> Self {
         Self {
-        	marker: PhantomData,
+            marker: PhantomData,
         }
     }
 }
 
-impl<'a, B, T, V> RenderGroupDesc<B, World> for DrawVoxelDesc<B, T, V> where
+impl<'a, B, T, V> RenderGroupDesc<B, World> for DrawVoxelDesc<B, T, V>
+where
     B: Backend,
     T: Base3DPassDef,
     V: Data,
@@ -99,10 +99,13 @@ impl<'a, B, T, V> RenderGroupDesc<B, World> for DrawVoxelDesc<B, T, V> where
         _buffers: Vec<NodeBuffer>,
         _images: Vec<NodeImage>,
     ) -> Result<Box<dyn RenderGroup<B, World>>, failure::Error> {
-        let env = EnvironmentSub::new(factory,  [
-            hal::pso::ShaderStageFlags::VERTEX,
-            hal::pso::ShaderStageFlags::FRAGMENT,
-        ])?;
+        let env = EnvironmentSub::new(
+            factory,
+            [
+                hal::pso::ShaderStageFlags::VERTEX,
+                hal::pso::ShaderStageFlags::FRAGMENT,
+            ],
+        )?;
         let materials = MaterialSub::new(factory)?;
         let skinning = SkinningSub::new(factory)?;
 
@@ -175,7 +178,8 @@ impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
     }
 }
 
-impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V> where
+impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V>
+where
     B: Backend,
     T: Base3DPassDef,
     V: Data,
@@ -225,7 +229,15 @@ impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V> where
                     if mesh.dirty {
                         let pos = vec3(0.0, 0.0, 0.0);
                         let scale = 16.0;
-                        let new_mesh = build_mesh(&mesh, VoxelContext::new(&mesh.data), pos, scale, &materials, queue, factory);
+                        let new_mesh = build_mesh(
+                            &mesh,
+                            VoxelContext::new(&mesh.data),
+                            pos,
+                            scale,
+                            &materials,
+                            queue,
+                            factory,
+                        );
 
                         if id == meshes_ref.len() {
                             meshes_ref.push(new_mesh);
@@ -237,9 +249,8 @@ impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V> where
                         mesh.dirty = false;
                     }
 
-                    mesh.mesh.map(|id| {
-                        ((mat, id), VertexArgs::from_object_data(tform, tint))
-                    })
+                    mesh.mesh
+                        .map(|id| ((mat, id), VertexArgs::from_object_data(tform, tint)))
                 })
                 .for_each_group(|(mat, id), data| {
                     if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
@@ -255,7 +266,7 @@ impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V> where
                             if chunk.dirty {
                                 chunk.mesh = match chunk.mesh {
                                     Some(id) => Some(id),
-                                    None => Some(meshes_ref.len())
+                                    None => Some(meshes_ref.len()),
                                 };
                                 chunk.dirty = false;
                                 chunk.mesh
@@ -269,16 +280,18 @@ impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V> where
                         if let Some(id) = build_id {
                             let x = ((i) % world.dims[0]) as isize;
                             let y = ((i / (world.dims[0])) % world.dims[1]) as isize;
-                            let z = ((i / (world.dims[0]*world.dims[1])) % world.dims[2]) as isize;
+                            let z =
+                                ((i / (world.dims[0] * world.dims[1])) % world.dims[2]) as isize;
                             let scale = world.scale;
                             let pos = vec3(
-                                (x + world.origin[0]) as f32 * scale, 
-                                (y + world.origin[1]) as f32 * scale, 
-                                (z + world.origin[2]) as f32 * scale
+                                (x + world.origin[0]) as f32 * scale,
+                                (y + world.origin[1]) as f32 * scale,
+                                (z + world.origin[2]) as f32 * scale,
                             );
                             let chunk = world.data[i].get().unwrap();
-                            let context = WorldContext::new([x,y,z], world);
-                            let new_mesh = build_mesh(chunk, context, pos, scale, &materials, queue, factory);
+                            let context = WorldContext::new([x, y, z], world);
+                            let new_mesh =
+                                build_mesh(chunk, context, pos, scale, &materials, queue, factory);
                             if id == meshes_ref.len() {
                                 meshes_ref.push(new_mesh);
                             } else {
@@ -289,7 +302,10 @@ impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V> where
 
                     world.data.iter().filter_map(|chunk| match chunk {
                         Chunk::Ready(chunk) => chunk.mesh.map(|id| {
-                            ((mat, id), VertexArgs::from_object_data(&Transform::default(), None))
+                            (
+                                (mat, id),
+                                VertexArgs::from_object_data(&Transform::default(), None),
+                            )
                         }),
                         _ => None,
                     })
@@ -302,7 +318,6 @@ impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V> where
         }
 
         self.static_batches.prune();
-            
         self.models.write(
             factory,
             index,
@@ -368,34 +383,49 @@ lazy_static::lazy_static! {
     );
 }
 
-fn build_mesh<'a, B, V, C>(
-    voxel: &VoxelRender<V>, 
-    context: C, 
-    pos: Vec3, 
-    scale: f32, 
+fn build_mesh<B, V, C>(
+    voxel: &VoxelRender<V>,
+    context: C,
+    pos: Vec3,
+    scale: f32,
     materials: &VoxelMaterialStorage,
-    queue: QueueId, 
-    factory: &Factory<B>
-) -> Option<Mesh> where
-    B: Backend, 
-    V: Data, 
+    queue: QueueId,
+    factory: &Factory<B>,
+) -> Option<Mesh>
+where
+    B: Backend,
+    V: Data,
     C: Context<V>,
 {
     let ao = AmbientOcclusion::build(&voxel.data, &context);
 
     let crate::triangulate::Mesh {
-        pos, nml, tan, tex, ind,
+        pos,
+        nml,
+        tan,
+        tex,
+        ind,
     } = crate::triangulate::Mesh::build::<V, C>(&voxel.data, &ao, &context, pos, scale);
 
-    let tex: Vec<_> = tex.into_iter().map(|(mat, ao)| {
-        let [u, v] = materials.coord(mat);
-        Surface{ tex_ao: [u, v, ao] }
-    }).collect();
+    let tex: Vec<_> = tex
+        .into_iter()
+        .map(|(mat, ao)| {
+            let [u, v] = materials.coord(mat);
+            Surface { tex_ao: [u, v, ao] }
+        })
+        .collect();
 
-    if pos.len() > 0 {
-        Some(B::wrap_mesh(MeshBuilder::new()
-            .with_vertices(pos).with_vertices(nml).with_vertices(tan).with_vertices(tex)
-            .with_indices(ind).build(queue, factory).unwrap()))
+    if !pos.is_empty() {
+        Some(B::wrap_mesh(
+            MeshBuilder::new()
+                .with_vertices(pos)
+                .with_vertices(nml)
+                .with_vertices(tan)
+                .with_vertices(tex)
+                .with_indices(ind)
+                .build(queue, factory)
+                .unwrap(),
+        ))
     } else {
         None
     }

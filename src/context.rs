@@ -1,6 +1,6 @@
-use crate::world::VoxelWorld;
 use crate::triangulate::Triangulate;
-use crate::voxel::{Voxel, Data};
+use crate::voxel::{Data, Voxel};
+use crate::world::VoxelWorld;
 
 /// Trait for retrieving neighbour information between separate root voxels.
 pub trait Context<T: Data> {
@@ -11,12 +11,12 @@ pub trait Context<T: Data> {
     fn render(&self, x: isize, y: isize, z: isize) -> bool;
 
     /// Returns a Context for the child at the relative coordinate
-    fn child<'a>(&'a self, x: isize, y: isize, z: isize) -> DetailContext<'a, T>;
+    fn child(&self, x: isize, y: isize, z: isize) -> DetailContext<'_, T>;
 }
 
 /// Context sampling no neighbours at all.
 pub struct VoxelContext<'a, T: Data> {
-    voxel: &'a Voxel<T>
+    voxel: &'a Voxel<T>,
 }
 
 /// Context sampling the inner details of a voxel. Neighbours resolve through the parent Context.
@@ -28,7 +28,7 @@ pub struct DetailContext<'a, T: Data> {
 
 /// Context sampling the chunks of a world.
 pub struct WorldContext<'a, V: Data> {
-    coord: [isize; 3], 
+    coord: [isize; 3],
     world: &'a VoxelWorld<V>,
 }
 
@@ -39,14 +39,22 @@ impl<'a, T: Data> VoxelContext<'a, T> {
 }
 
 impl<'a, T: Data> Context<T> for VoxelContext<'a, T> {
-    fn visible(&self, _: isize, _: isize, _: isize) -> bool { false }
+    fn visible(&self, _: isize, _: isize, _: isize) -> bool {
+        false
+    }
 
-    fn render(&self, _: isize, _: isize, _: isize) -> bool { false }
+    fn render(&self, _: isize, _: isize, _: isize) -> bool {
+        false
+    }
 
-    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, T> { 
-        if x >= 0 && x < Voxel::<T>::WIDTH as isize &&
-           y >= 0 && y < Voxel::<T>::WIDTH as isize &&
-           z >= 0 && z < Voxel::<T>::WIDTH as isize {
+    fn child(&self, x: isize, y: isize, z: isize) -> DetailContext<T> {
+        if x >= 0
+            && x < Voxel::<T>::WIDTH as isize
+            && y >= 0
+            && y < Voxel::<T>::WIDTH as isize
+            && z >= 0
+            && z < Voxel::<T>::WIDTH as isize
+        {
             let index = Voxel::<T>::coord_to_index(x as usize, y as usize, z as usize);
             DetailContext::new(self, [x, y, z], self.voxel.get(index))
         } else {
@@ -68,63 +76,73 @@ impl<'a, T: Data> DetailContext<'a, T> {
         let size = Voxel::<T>::WIDTH as isize;
         let coord = [x, y, z];
         if (0..3).fold(true, |b, i| b && coord[i] >= 0 && coord[i] < size) {
-            self.voxel.and_then(|v| v.get(
-                x as usize * Voxel::<T>::DX +
-                y as usize * Voxel::<T>::DY +
-                z as usize * Voxel::<T>::DZ))
+            self.voxel.and_then(|v| {
+                v.get(
+                    x as usize * Voxel::<T>::DX
+                        + y as usize * Voxel::<T>::DY
+                        + z as usize * Voxel::<T>::DZ,
+                )
+            })
         } else {
-            let grid = |x| if x >= 0 { x / size } else { (x+1) / size - 1};
-            let grid_mod = |x| if x%size >= 0 { x%size } else { x%size + size };
-            self.parent.clone().child(
-                self.coord[0] + grid(x),
-                self.coord[1] + grid(y),
-                self.coord[2] + grid(z)
-            ).find(
-                grid_mod(x), 
-                grid_mod(y), 
-                grid_mod(z)
-            )
+            let grid = |x| if x >= 0 { x / size } else { (x + 1) / size - 1 };
+            let grid_mod = |x| {
+                if x % size >= 0 {
+                    x % size
+                } else {
+                    x % size + size
+                }
+            };
+            self.parent
+                .child(
+                    self.coord[0] + grid(x),
+                    self.coord[1] + grid(y),
+                    self.coord[2] + grid(z),
+                )
+                .find(grid_mod(x), grid_mod(y), grid_mod(z))
         }
     }
 }
 
 impl<'a, T: Data> Context<T> for DetailContext<'a, T> {
-    fn visible(&self, x: isize, y: isize, z: isize) -> bool { 
+    fn visible(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|v| v.visible()).unwrap_or(false)
     }
 
-    fn render(&self, x: isize, y: isize, z: isize) -> bool { 
-        self.find(x, y, z).map(|v| v.render()).unwrap_or(false) 
+    fn render(&self, x: isize, y: isize, z: isize) -> bool {
+        self.find(x, y, z).map(|v| v.render()).unwrap_or(false)
     }
 
-    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, T> { 
+    fn child(&self, x: isize, y: isize, z: isize) -> DetailContext<T> {
         DetailContext::new(self, [x, y, z], self.find(x, y, z))
     }
 }
 
 impl<'a, V: Data> WorldContext<'a, V> {
     pub fn new(coord: [isize; 3], world: &'a VoxelWorld<V>) -> Self {
-        Self {
-            coord,
-            world,
-        }
+        Self { coord, world }
     }
 
     fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a Voxel<V>> {
         let size = Voxel::<V>::WIDTH as isize;
-        let grid = |x| if x >= 0 { x / size } else { (x+1) / size - 1};
-        let coord = [self.coord[0]+grid(x), self.coord[1]+grid(y), self.coord[2]+grid(z)];
-        
-        if (0..3).fold(true, |b, i| b && coord[i] >= 0 && coord[i] < self.world.dims[i] as isize) {
-            let index = coord[0] as usize + 
-                coord[1] as usize * self.world.dims[0] + 
-                coord[2] as usize * self.world.dims[0] * self.world.dims[1];
+        let grid = |x| if x >= 0 { x / size } else { (x + 1) / size - 1 };
+        let coord = [
+            self.coord[0] + grid(x),
+            self.coord[1] + grid(y),
+            self.coord[2] + grid(z),
+        ];
+        let within_bounds = |b, i| b && coord[i] >= 0 && coord[i] < self.world.dims[i] as isize;
+
+        if (0..3).fold(true, within_bounds) {
+            let index = coord[0] as usize
+                + coord[1] as usize * self.world.dims[0]
+                + coord[2] as usize * self.world.dims[0] * self.world.dims[1];
             if let Some(voxel) = self.world.data[index].get() {
                 let grid_mod = |x: isize| if x%size >= 0 { x%size } else { x%size + size } as usize;
                 voxel.get(
-                    grid_mod(x)*Voxel::<V>::DX + 
-                    grid_mod(y)*Voxel::<V>::DY + 
-                    grid_mod(z)*Voxel::<V>::DZ)
+                    grid_mod(x) * Voxel::<V>::DX
+                        + grid_mod(y) * Voxel::<V>::DY
+                        + grid_mod(z) * Voxel::<V>::DZ,
+                )
             } else {
                 None
             }
@@ -143,8 +161,7 @@ impl<'a, V: Data> Context<V> for WorldContext<'a, V> {
         self.find(x, y, z).map(|c| c.render()).unwrap_or(false)
     }
 
-    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, V> {
+    fn child(&self, x: isize, y: isize, z: isize) -> DetailContext<V> {
         DetailContext::new(self, [x, y, z], self.find(x, y, z))
     }
 }
-
