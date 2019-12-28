@@ -36,12 +36,19 @@ pub trait Triangulate<T: Data> {
     );
 }
 
+pub struct Texturing {
+    pub material_id: u32,
+    pub side: u8,
+    pub coord: u8,
+    pub ao: f32,
+}
+
 /// Triangulated mesh data created from a single voxel definition.
 pub struct Mesh {
     pub pos: Vec<Position>,
     pub nml: Vec<Normal>,
     pub tan: Vec<Tangent>,
-    pub tex: Vec<(u32, f32)>,
+    pub tex: Vec<Texturing>,
     pub ind: Vec<u32>,
 }
 
@@ -199,7 +206,12 @@ fn triangulate_face<T, S>(
     mesh.nml.extend(repeat(Normal(convert3(normal))).take(4));
     mesh.tan.extend(repeat(Tangent(convert4(tangent))).take(4));
     mesh.tex
-        .extend(repeat(material.0).zip(occlusion.iter().cloned()));
+        .extend(occlusion.iter().enumerate().map(|(i, &ao)| Texturing {
+            material_id: material.0,
+            side: S::SIDE as u8,
+            coord: i as u8,
+            ao,
+        }));
 
     if occlusion[0] + occlusion[2] > occlusion[1] + occlusion[3] {
         mesh.ind

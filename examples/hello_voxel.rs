@@ -87,7 +87,7 @@ impl SimpleState for Example {
     ) -> SimpleTrans {
         if let StateEvent::Window(event) = event {
             if is_key_down(&event, VirtualKeyCode::Escape) {
-                Trans::Quit
+                return Trans::Quit;
             } else if is_mouse_button_down(&event, MouseButton::Left) {
                 let mut store = state.world.write_storage::<VoxelWorld<ExampleVoxel>>();
                 let screen = state.world.read_resource::<ScreenDimensions>();
@@ -125,14 +125,10 @@ impl SimpleState for Example {
                 if let Some(voxel) = voxels.select_mut::<ExampleVoxel>(&ray, 2) {
                     replace(voxel, Voxel::default());
                 }
-
-                Trans::None
-            } else {
-                Trans::None
             }
-        } else {
-            Trans::None
         }
+
+        Trans::None
     }
 }
 

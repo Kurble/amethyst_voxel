@@ -15,7 +15,7 @@ use futures::{Async, Future};
 
 /// Data type for the `Model` asset.
 pub struct ModelData {
-    materials: Arc<[VoxelMaterial]>,
+    materials: Arc<[Arc<dyn VoxelMaterial + Send + Sync>]>,
     voxels: Vec<(usize, usize)>,
     dimensions: [usize; 3],
 }
@@ -43,7 +43,7 @@ impl ModelData {
     ///         the material references to an index in the materials slice.
     /// dimensions: the three dimensional size of the model.
     pub fn new(
-        materials: Arc<[VoxelMaterial]>,
+        materials: Arc<[Arc<dyn VoxelMaterial + Send + Sync>]>,
         voxels: Vec<(usize, usize)>,
         dimensions: [usize; 3],
     ) -> Self {
@@ -81,7 +81,7 @@ impl<'a> System<'a> for ModelProcessor {
                 let materials: Vec<_> = b
                     .materials
                     .iter()
-                    .map(|&m| material_storage.create(m))
+                    .map(|m| material_storage.create(m.clone()))
                     .collect();
                 let mut voxels: Vec<_> = repeat(None)
                     .take(b.dimensions[0] * b.dimensions[1] * b.dimensions[2])

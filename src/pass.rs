@@ -409,9 +409,11 @@ where
 
     let tex: Vec<_> = tex
         .into_iter()
-        .map(|(mat, ao)| {
-            let [u, v] = materials.coord(mat);
-            Surface { tex_ao: [u, v, ao] }
+        .map(|texturing| {
+            let [u, v] = materials.coord(texturing.material_id, texturing.side, texturing.coord);
+            Surface {
+                tex_ao: [u, v, texturing.ao],
+            }
         })
         .collect();
 
