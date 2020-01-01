@@ -109,22 +109,30 @@ impl SimpleState for Example {
 
                     //let mouse = input.mouse_position().map(|(x, y)| [x, y].into()).unwrap();
                     let screen = screen.diagonal();
-                    let point = [screen.x * 0.5, screen.y * 0.5, 1.0].into();
+                    let point = [screen.x * 0.5, screen.y * 0.5, -1.0].into();
                     let point = camera
                         .projection()
                         .screen_to_world_point(point, screen, transform);
                     let origin = transform.global_matrix().column(3).xyz();
-                    let direction = (vec3(point.x, point.y, point.z) - origin).normalize();
+                    let direction = vec3(0.0, -1.0, 0.0).normalize();
 
                     (origin, direction)
                 };
 
+                //println!("position: {},{},{}", origin.x, origin.y, origin.z);
+
                 let voxels = store.get_mut(self.voxels.unwrap()).unwrap();
 
                 let ray = voxels.ray(origin, direction);
-                if let Some(voxel) = voxels.select_mut::<ExampleVoxel>(&ray, 2) {
-                    replace(voxel, Voxel::default());
+                if let Some(hit) = voxels.hit(&ray) {
+                    //println!("hit a voxel! distance: {}", hit);
                 }
+                //if let Some(voxel) = voxels.select_mut::<ExampleVoxel>(&ray, 2) {
+                //    if let Some(isct) = isct.unwrap().intersection {
+                //        println!("found a voxel: {},{},{}", isct.x, isct.y, isct.z);
+                //    }
+                //    replace(voxel, Voxel::default());
+                //}
             }
         }
 

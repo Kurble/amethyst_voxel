@@ -1,11 +1,14 @@
 pub use crate::{
     bundle::VoxelBundle,
-    material::{VoxelMaterial, VoxelMaterialId, VoxelMaterialStorage},
+    material::{
+        ColoredMaterial, TexturedMaterial, Tiling, VoxelMaterial, VoxelMaterialId,
+        VoxelMaterialStorage,
+    },
     model::{Model, ModelSource},
     raycast::{Raycast, RaycastBase},
     vox::VoxFormat,
     voxel::{Data, Voxel},
-    world::{Limits, VoxelFuture, VoxelRender, VoxelSource, VoxelWorld},
+    world::{Limits, VoxelRender, VoxelSource, VoxelSourceResult, VoxelWorld},
 };
 
 pub type RenderVoxelPbr<V> =

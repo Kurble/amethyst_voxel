@@ -12,7 +12,9 @@ pub struct Ray<T: Raycast> {
     transform: Mat4,
     origin: Vec3,
     direction: Vec3,
+    length: Option<f32>,
     index: Option<usize>,
+    pub intersection: Option<Vec3>,
     marker: PhantomData<T>,
 }
 
@@ -68,19 +70,22 @@ pub trait Raycast: Any + Sized {
 
     /// Get the distance on the ray to the nearest hit.
     fn hit(&self, ray: &Ray<Self>) -> Option<f32> {
-        self.cast(ray).and_then(|ray| {
-            self.get(&ray)
-                .and_then(|sub| sub.hit(&ray))
-                .or_else(|| Some(ray.distance()))
-        })
+        self.cast(ray).map(|result| result.distance())
     }
 }
 
 impl<T: Raycast> Ray<T> {
     /// Get the distance this ray has travelled until it hit something
     pub fn distance(&self) -> f32 {
-        // todo
-        0.0
+        self.intersection
+            .map(|i| (i - self.origin).magnitude())
+            .unwrap_or(::std::f32::INFINITY)
+    }
+
+    /// Set the distance that must be checked at least
+    pub fn length(mut self, length: f32) -> Self {
+        self.length = Some(length);
+        self
     }
 }
 
@@ -89,8 +94,10 @@ impl<V: Data> RaycastBase for VoxelWorld<V> {
         Ray {
             origin,
             direction,
+            length: None,
             transform: Mat4::identity(),
             index: None,
+            intersection: None,
             marker: PhantomData,
         }
     }
@@ -127,37 +134,32 @@ impl<V: Data> Raycast for VoxelWorld<V> {
                 let i = coord[0] as usize
                     + coord[1] as usize * self.dims[0]
                     + coord[2] as usize * self.dims[0] * self.dims[1];
-                match self.data[i].get() {
-                    Some(voxel) => {
-                        if voxel.visible() {
-                            let sc = self.scale;
-                            let s = scaling(&vec3(sc, sc, sc));
-                            let t = translation(&vec3(
-                                (self.origin[0] + coord[0]) as f32 * sc,
-                                (self.origin[1] + coord[1]) as f32 * sc,
-                                (self.origin[2] + coord[2]) as f32 * sc,
-                            ));
-                            let r = Ray {
-                                transform: ray.transform * t * s,
-                                origin: ray.origin,
-                                direction: ray.direction,
-                                index: Some(i),
-                                marker: PhantomData,
-                            };
-                            if voxel.cast(&r).is_some() {
-                                Some(r)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
+                if let Some(voxel) = self.data[i].get() {
+                    if voxel.visible() {
+                        let sc = self.scale;
+                        let s = scaling(&vec3(sc, sc, sc));
+                        let t = translation(&vec3(
+                            (self.origin[0] + coord[0]) as f32 * sc,
+                            (self.origin[1] + coord[1]) as f32 * sc,
+                            (self.origin[2] + coord[2]) as f32 * sc,
+                        ));
+                        let r = Ray {
+                            transform: ray.transform * t * s,
+                            origin: ray.origin,
+                            direction: ray.direction,
+                            length: ray.length,
+                            index: Some(i),
+                            intersection: None,
+                            marker: PhantomData,
+                        };
+                        if let Some(mut sub) = voxel.cast(&r) {
+                            sub.index = Some(i);
+                            return Some(sub);
                         }
                     }
-                    None => None,
                 }
-            } else {
-                None
             }
+            None
         };
 
         // don't forget to skip the starting position
@@ -223,15 +225,17 @@ impl<T: Data> Raycast for Voxel<T> {
         let scale = (1 << T::SUBDIV) as f32;
         let current_direction = transform.transform_vector(&ray.direction);
         let current = transform * vec4(ray.origin[0], ray.origin[1], ray.origin[2], 1.0);
-        let mut current = vec4_to_vec3(&(current * scale));
+        let mut current = vec4_to_vec3(&current) * scale;
 
         // move the origin of the ray to the start of the box, but only if we're not inside the
         //  box already.
         for i in 0..3 {
             let t = if current_direction[i] > 0.0 {
                 (0.0 - current[i]) / current_direction[i]
-            } else {
+            } else if current_direction[i] < 0.0 {
                 ((1 << T::SUBDIV) as f32 - current[i]) / current_direction[i]
+            } else {
+                0.0
             };
             if t > 0.0 {
                 current += current_direction * t;
@@ -249,83 +253,99 @@ impl<T: Data> Raycast for Voxel<T> {
             }
         }
 
-        // lambda that checks if we hit something
-        let hit = |[x, y, z]: [i64; 3]| -> Option<Ray<Self>> {
-            if x >= 0
-                && x < Self::WIDTH as i64
-                && y >= 0
-                && y < Self::WIDTH as i64
-                && z >= 0
-                && z < Self::WIDTH as i64
-            {
-                let i = x as usize + y as usize * Self::DY + z as usize * Self::DZ;
-                match self.get(i) {
-                    Some(voxel) => {
-                        if voxel.visible() {
-                            let sc = Self::SCALE;
-                            let s = scaling(&vec3(sc, sc, sc));
-                            let t = translation(&vec3(x as f32 * sc, y as f32 * sc, z as f32 * sc));
-                            let r = Ray {
-                                transform: ray.transform * t * s,
-                                origin: ray.origin,
-                                direction: ray.direction,
-                                index: Some(i),
-                                marker: PhantomData,
-                            };
-                            if voxel.cast(&r).is_some() {
-                                Some(r)
-                            } else {
-                                None
+        match self {
+            Voxel::Empty { .. } => None,
+            Voxel::Material { .. } => {
+                let current = current / scale;
+                let intersection = ray.transform * vec4(current[0], current[1], current[2], 1.0);
+
+                Some(Ray {
+                    transform: ray.transform,
+                    origin: ray.origin,
+                    direction: ray.direction,
+                    length: ray.length,
+                    index: Some(0),
+                    intersection: Some(vec4_to_vec3(&intersection)),
+                    marker: PhantomData,
+                })
+            }
+            Voxel::Detail { .. } => {
+                // lambda that checks if we hit something
+                let hit = |[x, y, z]: [i64; 3]| -> Option<Ray<Self>> {
+                    if x >= 0
+                        && x < Self::WIDTH as i64
+                        && y >= 0
+                        && y < Self::WIDTH as i64
+                        && z >= 0
+                        && z < Self::WIDTH as i64
+                    {
+                        let i = x as usize + y as usize * Self::DY + z as usize * Self::DZ;
+                        if let Some(voxel) = self.get(i) {
+                            if voxel.visible() {
+                                let sc = Self::SCALE;
+                                let s = scaling(&vec3(sc, sc, sc));
+                                let t =
+                                    translation(&vec3(x as f32 * sc, y as f32 * sc, z as f32 * sc));
+                                let r = Ray {
+                                    transform: ray.transform * t * s,
+                                    origin: ray.origin,
+                                    direction: ray.direction,
+                                    length: None,
+                                    index: Some(i),
+                                    intersection: None,
+                                    marker: PhantomData,
+                                };
+                                if let Some(mut sub) = voxel.cast(&r) {
+                                    sub.index = Some(i);
+                                    return Some(sub);
+                                }
                             }
-                        } else {
-                            None
                         }
                     }
-                    None => None,
+
+                    None
+                };
+
+                // check the voxel that we're inside of first.
+                if let Some(hit) = hit(current_i) {
+                    return Some(hit);
                 }
-            } else {
+
+                // then we'll find out the nearest block hit
+                for _ in 0..T::SUBDIV * 6 {
+                    // try to find the nearest intersection with the grid
+                    let i = vec3(
+                        intersect(current[0], current_direction[0]),
+                        intersect(current[1], current_direction[1]),
+                        intersect(current[2], current_direction[2]),
+                    );
+
+                    // advance by the distance of the nearest intersection
+                    for d in 0..3 {
+                        let e = (d + 1) % 3;
+                        let f = (d + 2) % 3;
+                        if i[d] <= i[e] && i[d] <= i[f] {
+                            current += current_direction * i[d];
+                            if current_direction[d] < 0.0 {
+                                current_i[d] -= 1;
+                                current[d] = current_i[d] as f32;
+                                if let Some(hit) = hit(current_i) {
+                                    return Some(hit);
+                                }
+                            } else {
+                                current_i[d] += 1;
+                                current[d] = current_i[d] as f32;
+                                if let Some(hit) = hit(current_i) {
+                                    return Some(hit);
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
                 None
             }
-        };
-
-        // check the voxel that we're inside of first.
-        if let Some(hit) = hit(current_i) {
-            return Some(hit);
         }
-
-        // then we'll find out the nearest block hit
-        for _ in 0..T::SUBDIV * 6 {
-            // try to find the nearest intersection with the grid
-            let i = vec3(
-                intersect(current[0], current_direction[0]),
-                intersect(current[1], current_direction[1]),
-                intersect(current[2], current_direction[2]),
-            );
-
-            // advance by the distance of the nearest intersection
-            for d in 0..3 {
-                let e = (d + 1) % 3;
-                let f = (d + 2) % 3;
-                if i[d] <= i[e] && i[d] <= i[f] {
-                    current += current_direction * i[d];
-                    if current_direction[d] < 0.0 {
-                        current_i[d] -= 1;
-                        current[d] = current_i[d] as f32;
-                        if let Some(hit) = hit(current_i) {
-                            return Some(hit);
-                        }
-                    } else {
-                        current_i[d] += 1;
-                        current[d] = current_i[d] as f32;
-                        if let Some(hit) = hit(current_i) {
-                            return Some(hit);
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        None
     }
 
     fn get(&self, ray: &Ray<Self>) -> Option<&Self> {

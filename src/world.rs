@@ -4,11 +4,12 @@ use amethyst::{
     ecs::prelude::{Component, Join, Read, ReadStorage, System, SystemData, WriteStorage},
     renderer::{ActiveCamera, Camera},
 };
-use futures::{Async, Future};
-use std::error::Error;
+use crossbeam::atomic::AtomicCell;
+use rayon::ThreadPool;
 use std::marker::PhantomData;
 use std::mem::replace;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 /// A dynamically loaded infinite world component.
 /// Voxel data is pulled from a VoxelSource component on the same entity.
@@ -33,24 +34,34 @@ pub struct VoxelRender<T: Data> {
     pub(crate) mesh: Option<usize>,
 }
 
-/// Future alias for root voxels that will be loaded in the future.
-pub type VoxelFuture<T> =
-    Box<dyn Future<Item = Voxel<T>, Error = Box<dyn Error + Send + Sync>> + Send + Sync>;
+pub enum VoxelSourceResult<T: Data> {
+    Ok(Voxel<T>),
+    Loading(Box<dyn FnOnce() -> Voxel<T> + Send>),
+    Retry,
+}
 
 /// Voxel data source for `VoxelWorld`
-pub trait VoxelSource<'a, T: Data> {
-    /// SystemData to be used in the process(..) function.
-    type SystemData: SystemData<'a>;
+pub trait VoxelSource<'s, T: Data>: Send + Sync {
+    type SystemData: SystemData<'s>;
 
-    /// This function will be called periodically to give the `VoxelSource` access to it's SystemData.
-    fn process(&mut self, system_data: &mut Self::SystemData);
-
-    /// Load chunk at the specified chunk coordinate/
-    fn load(&mut self, coord: [isize; 3]) -> VoxelFuture<T>;
+    /// Load chunk at the specified chunk coordinate.
+    /// After this the returned FnOnce will be run on a background thread to get the final result.
+    fn load_voxel(
+        &mut self,
+        system_data: &mut Self::SystemData,
+        coord: [isize; 3],
+    ) -> VoxelSourceResult<T>;
 
     /// When a chunk is removed from the `VoxelWorld`, some sources might want to persist the changes made
     /// to the voxel. When a chunk is removed, this function will be called dispose of the chunk properly.
-    fn drop(&mut self, coord: [isize; 3], voxel: Voxel<T>);
+    fn drop_voxel(
+        &mut self,
+        _system_data: &mut Self::SystemData,
+        _coord: [isize; 3],
+        _voxel: Voxel<T>,
+    ) -> Box<dyn FnOnce() + Send> {
+        Box::new(|| ())
+    }
 
     /// Retrieve the limits in chunks that this VoxelSource can generate.
     /// Chunks that have neighbours according to the limits, but have no neighbours in the `VoxelWorld`
@@ -58,8 +69,10 @@ pub trait VoxelSource<'a, T: Data> {
     fn limits(&self) -> Limits;
 }
 
-#[derive(Default)]
-pub struct WorldSystem<T: Data, S: for<'s> VoxelSource<'s, T>>(PhantomData<(T, S)>);
+pub struct WorldSystem<T: Data, S: for<'s> VoxelSource<'s, T>> {
+    pool: Arc<ThreadPool>,
+    marker: PhantomData<(T, S)>,
+}
 
 /// Chunk coordinates to denote the rendering limits of a `VoxelWorld`.
 /// `None` specifies a non-existing limit, the world will be infinite in that direction.
@@ -72,7 +85,7 @@ pub struct Limits {
 
 pub(crate) enum Chunk<T: Data> {
     NotNeeded,
-    NotReady(VoxelFuture<T>),
+    NotReady(Arc<AtomicCell<Option<Voxel<T>>>>),
     Ready(VoxelRender<T>),
 }
 
@@ -191,20 +204,15 @@ impl<T: Data> Chunk<T> {
     pub fn get_mut(&mut self) -> Option<&mut VoxelRender<T>> {
         match *self {
             Chunk::NotNeeded => None,
-            Chunk::NotReady(ref mut fut) => match fut.poll() {
-                Ok(Async::Ready(voxel)) => {
+            Chunk::NotReady(ref request) => match request.take() {
+                Some(voxel) => {
                     *self = Chunk::Ready(VoxelRender::new(voxel));
                     match *self {
                         Chunk::Ready(ref mut voxel) => Some(voxel),
                         _ => unreachable!(),
                     }
                 }
-                Ok(Async::NotReady) => None,
-                Err(e) => {
-                    println!("Chunk failed to load: {}", e);
-                    *self = Chunk::NotNeeded;
-                    None
-                }
+                None => None,
             },
             Chunk::Ready(ref mut voxel) => Some(voxel),
         }
@@ -212,8 +220,11 @@ impl<T: Data> Chunk<T> {
 }
 
 impl<T: Data, S: for<'s> VoxelSource<'s, T>> WorldSystem<T, S> {
-    pub fn new() -> Self {
-        WorldSystem(PhantomData)
+    pub fn new(pool: Arc<ThreadPool>) -> Self {
+        WorldSystem {
+            marker: PhantomData,
+            pool,
+        }
     }
 }
 
@@ -346,9 +357,29 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                         ],
                                         world.scale,
                                     );
-                                    Chunk::NotReady(source.load(coord))
+
+                                    match source.load_voxel(&mut source_data, coord) {
+                                        VoxelSourceResult::Ok(chunk) => {
+                                            Chunk::Ready(VoxelRender::new(chunk))
+                                        }
+                                        VoxelSourceResult::Loading(job) => {
+                                            let request = Arc::new(AtomicCell::default());
+                                            let weak = Arc::downgrade(&request);
+                                            self.pool.spawn(move || {
+                                                if let Some(request) = weak.upgrade() {
+                                                    let result = job();
+                                                    request.store(Some(result));
+                                                }
+                                            });
+                                            Chunk::NotReady(request)
+                                        }
+                                        VoxelSourceResult::Retry => {
+                                            world.loaded = false;
+                                            Chunk::NotNeeded
+                                        }
+                                    }
                                 }
-                                Chunk::NotReady(future) => {
+                                Chunk::NotReady(request) => {
                                     let coord = [x + origin[0], y + origin[1], z + origin[2]];
                                     limit_visibility(
                                         &mut world.visibility,
@@ -360,7 +391,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                         ],
                                         world.scale,
                                     );
-                                    Chunk::NotReady(future)
+                                    Chunk::NotReady(request)
                                 }
                                 Chunk::Ready(voxel) => Chunk::Ready(voxel),
                             };
@@ -370,7 +401,10 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                 Chunk::NotReady(_future) => { /* this is a problem */ }
                                 Chunk::Ready(voxel) => {
                                     let coord = [x + origin[0], y + origin[1], z + origin[2]];
-                                    source.drop(coord, voxel.data);
+                                    let job =
+                                        source.drop_voxel(&mut source_data, coord, voxel.data);
+
+                                    self.pool.spawn(move || job());
                                 }
                                 Chunk::NotNeeded => (),
                             }
@@ -389,8 +423,6 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                 .fold(1000.0, |view_range, (i, visibility)| {
                     view_range.min((visibility - center[i / 2]).abs())
                 });
-
-            source.process(&mut source_data);
         }
     }
 }

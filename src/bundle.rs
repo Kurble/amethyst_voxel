@@ -5,21 +5,29 @@ use amethyst::{
     error::Error,
     prelude::World,
 };
+use rayon::{ThreadPool, ThreadPoolBuilder};
+use std::sync::Arc;
 
 type SystemRegistrator = dyn for<'a, 'b> FnOnce(&mut World, &mut DispatcherBuilder<'a, 'b>);
 
 /// Main bundle for supporting voxels in your amethyst project.
 /// Before any `Voxel<T>` type will work,
 ///  you have to specify which `Data` and `Source` implementations you plan to use.
-#[derive(Default)]
 pub struct VoxelBundle {
     systems: Vec<Box<SystemRegistrator>>,
+    pool: Arc<ThreadPool>,
 }
 
 impl VoxelBundle {
     pub fn new() -> Self {
         VoxelBundle {
             systems: Vec::new(),
+            pool: Arc::new(
+                ThreadPoolBuilder::new()
+                    .num_threads(2)
+                    .build()
+                    .expect("Unable to create threadpool for voxel loading"),
+            ),
         }
     }
 
@@ -29,9 +37,10 @@ impl VoxelBundle {
         V: Data,
         S: for<'s> VoxelSource<'s, V> + Component + Send + Sync,
     {
+        let pool = self.pool.clone();
         self.systems.push(Box::new(|_world, builder| {
             builder.add(
-                crate::world::WorldSystem::<V, S>::new(),
+                crate::world::WorldSystem::<V, S>::new(pool),
                 "world_sourcing",
                 &[],
             )

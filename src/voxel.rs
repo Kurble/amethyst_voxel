@@ -102,7 +102,7 @@ impl<T: Data> Voxel<T> {
         match *self {
             Voxel::Empty { .. } => None,
             Voxel::Detail { ref detail, .. } => detail.get(index),
-            Voxel::Material { .. } => None,
+            Voxel::Material { .. } => Some(self),
         }
     }
 
@@ -111,7 +111,7 @@ impl<T: Data> Voxel<T> {
         match *self {
             Voxel::Empty { .. } => None,
             Voxel::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
-            Voxel::Material { .. } => None,
+            Voxel::Material { .. } => Some(self),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    material::{Color, VoxelMaterial},
+    material::{ColoredMaterial, VoxelMaterial},
     model::ModelData,
 };
 use amethyst::assets::Format;
@@ -81,7 +81,7 @@ where
         // the used palette. Colors are diffuse. Overwrites the current palette.
         else if chunk.is("RGBA") {
             materials.clear();
-            materials.push(Color::default());
+            materials.push(ColoredMaterial::default());
             for _ in 0..255 {
                 let r = chunk.content.read_u8()?;
                 let g = chunk.content.read_u8()?;
@@ -139,28 +139,28 @@ where
             );
 
             materials[id] = match ty {
-                0 /*diffuse*/ => Color {
+                0 /*diffuse*/ => ColoredMaterial {
                     albedo: old.albedo,
                     emission: old.emission,
                     alpha: old.alpha,
                     metallic: mul_value(255, 1.0 - weight),
                     roughness: mul_value(255, roughness),
                 },
-                1 /*metal*/ => Color {
+                1 /*metal*/ => ColoredMaterial {
                     albedo: old.albedo,
                     emission: old.emission,
                     alpha: old.alpha,
                     metallic: mul_value(255, 1.0 - weight),
                     roughness: mul_value(255, roughness),
                 },
-                2 /*glass*/ => Color {
+                2 /*glass*/ => ColoredMaterial {
                     albedo: old.albedo,
                     emission: old.emission,
                     alpha: old.alpha,
                     metallic: mul_value(255, 1.0 - weight),
                     roughness: mul_value(255, roughness),
                 },
-                3 /*emissive*/ => Color {
+                3 /*emissive*/ => ColoredMaterial {
                     albedo: old.albedo,
                     emission: [
                         mul_value(old.albedo[0], weight),
@@ -176,10 +176,10 @@ where
         }
     }
 
-    let materials: Arc<[Arc<dyn VoxelMaterial + Send + Sync>]> = materials
+    let materials: Arc<[Arc<dyn VoxelMaterial>]> = materials
         .into_iter()
-        .map(|color| Arc::new(color) as Arc<dyn VoxelMaterial + Send + Sync>)
-        .collect::<Vec<Arc<dyn VoxelMaterial + Send + Sync>>>()
+        .map(|color| Arc::new(color) as Arc<dyn VoxelMaterial>)
+        .collect::<Vec<Arc<dyn VoxelMaterial>>>()
         .into();
 
     // Convert the stored chunk data to our own voxel format.
@@ -222,12 +222,12 @@ fn bit(field: u32, bit: u32) -> bool {
 }
 
 // convert a simple r,g,b,a material to a VoxelMaterial
-fn rgba_to_material(r: u8, g: u8, b: u8, a: u8) -> Color {
+fn rgba_to_material(r: u8, g: u8, b: u8, a: u8) -> ColoredMaterial {
     //let r = ((r as f32 / 255.0).powf(2.2 / 1.0) * 255.0) as u8;
     //let g = ((g as f32 / 255.0).powf(2.2 / 1.0) * 255.0) as u8;
     //let b = ((b as f32 / 255.0).powf(2.2 / 1.0) * 255.0) as u8;
 
-    Color {
+    ColoredMaterial {
         albedo: [r, g, b],
         emission: [0, 0, 0],
         alpha: a,

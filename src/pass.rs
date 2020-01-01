@@ -41,6 +41,7 @@ use std::marker::PhantomData;
 #[derivative(Debug(bound = ""), Default(bound = ""))]
 pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef, V: Data> {
     marker: PhantomData<(B, D, V)>,
+    triangulate_limit: usize,
 }
 
 #[derive(Derivative)]
@@ -56,6 +57,7 @@ pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: Data> {
     materials: MaterialSub<B, T::TextureSet>,
     models: DynamicVertexBuffer<B, VertexArgs>,
     marker: PhantomData<(T, V)>,
+    triangulate_limit: usize,
 }
 
 #[derive(Debug)]
@@ -74,9 +76,10 @@ impl AsAttribute for Surface {
 }
 
 impl<B: Backend, T: Base3DPassDef, V: Data> DrawVoxelDesc<B, T, V> {
-    pub fn new() -> Self {
+    pub fn new(triangulate_limit: usize) -> Self {
         Self {
             marker: PhantomData,
+            triangulate_limit,
         }
     }
 }
@@ -142,6 +145,7 @@ where
             materials,
             models: DynamicVertexBuffer::new(),
             marker: PhantomData,
+            triangulate_limit: self.triangulate_limit,
         }))
     }
 }
@@ -217,6 +221,8 @@ where
         let statics_ref = &mut self.static_batches;
         let meshes_ref = &mut self.meshes;
 
+        let mut triangulate_limit = self.triangulate_limit;
+
         if let Some(mat) = materials.handle() {
             (&mut meshes, &transforms, tints.maybe())
                 .join()
@@ -226,7 +232,7 @@ where
                         None => meshes_ref.len(),
                     };
 
-                    if mesh.dirty {
+                    if mesh.dirty && triangulate_limit > 0 {
                         let pos = vec3(0.0, 0.0, 0.0);
                         let scale = 16.0;
                         let new_mesh = build_mesh(
@@ -247,6 +253,8 @@ where
 
                         mesh.mesh = Some(id);
                         mesh.dirty = false;
+
+                        triangulate_limit -= 1;
                     }
 
                     mesh.mesh
@@ -263,7 +271,8 @@ where
                 .flat_map(|world| {
                     for i in 0..world.data.len() {
                         let build_id = if let Some(chunk) = world.get_ready_chunk(i) {
-                            if chunk.dirty {
+                            if chunk.dirty && triangulate_limit > 0 {
+                                triangulate_limit -= 1;
                                 chunk.mesh = match chunk.mesh {
                                     Some(id) => Some(id),
                                     None => Some(meshes_ref.len()),

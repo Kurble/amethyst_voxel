@@ -20,12 +20,19 @@ use rendy::graph::render::RenderGroupDesc;
 pub struct RenderVoxel<D: Base3DPassDef, V: Data> {
     target: Target,
     marker: std::marker::PhantomData<(D, V)>,
+    triangulate_limit: usize,
 }
 
 impl<D: Base3DPassDef, V: Data> RenderVoxel<D, V> {
     /// Set target to which 3d meshes will be rendered.
     pub fn with_target(mut self, target: Target) -> Self {
         self.target = target;
+        self
+    }
+
+    /// Set a per frame triangulation limit. The default is 4
+    pub fn with_triangulate_limit(mut self, triangulate_limit: usize) -> Self {
+        self.triangulate_limit = triangulate_limit;
         self
     }
 }
@@ -52,10 +59,15 @@ where
         _factory: &mut Factory<B>,
         _world: &World,
     ) -> Result<(), Error> {
+        let limit = if self.triangulate_limit == 0 {
+            2
+        } else {
+            self.triangulate_limit
+        };
         plan.extend_target(self.target, move |ctx| {
             ctx.add(
                 RenderOrder::Opaque,
-                DrawVoxelDesc::<B, D, V>::new().builder(),
+                DrawVoxelDesc::<B, D, V>::new(limit).builder(),
             )?;
             Ok(())
         });

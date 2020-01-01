@@ -9,27 +9,24 @@ use amethyst::{
     ecs::{Component, DenseVecStorage, Read, ReadExpect, System, VecStorage, Write, WriteExpect},
 };
 use std::iter::repeat;
-use std::sync::{Arc, Mutex};
-
-use futures::{Async, Future};
+use std::sync::Arc;
 
 /// Data type for the `Model` asset.
 pub struct ModelData {
-    materials: Arc<[Arc<dyn VoxelMaterial + Send + Sync>]>,
+    materials: Arc<[Arc<dyn VoxelMaterial>]>,
     voxels: Vec<(usize, usize)>,
     dimensions: [usize; 3],
 }
 
 /// A predefined model of voxels.
 pub struct Model {
-    pub voxels: Vec<Option<VoxelMaterialId>>,
+    pub voxels: Arc<[Option<VoxelMaterialId>]>,
     pub dimensions: [usize; 3],
 }
 
 /// A `VoxelSource` that loads chunks from a `Model`.
 pub struct ModelSource {
     handle: Handle<Model>,
-    requests: Vec<Box<dyn FnOnce(&Model) + Send + Sync>>,
     limits: Limits,
 }
 
@@ -43,7 +40,7 @@ impl ModelData {
     ///         the material references to an index in the materials slice.
     /// dimensions: the three dimensional size of the model.
     pub fn new(
-        materials: Arc<[Arc<dyn VoxelMaterial + Send + Sync>]>,
+        materials: Arc<[Arc<dyn VoxelMaterial>]>,
         voxels: Vec<(usize, usize)>,
         dimensions: [usize; 3],
     ) -> Self {
@@ -96,7 +93,7 @@ impl<'a> System<'a> for ModelProcessor {
                 }
 
                 Ok(ProcessingState::Loaded(Model {
-                    voxels,
+                    voxels: voxels.into(),
                     dimensions: [b.dimensions[0], b.dimensions[2], b.dimensions[1]],
                 }))
             },
@@ -111,7 +108,6 @@ impl ModelSource {
     pub fn new(handle: Handle<Model>) -> Self {
         Self {
             handle,
-            requests: Vec::new(),
             limits: Limits {
                 from: [Some(0); 3],
                 to: [None; 3],
@@ -132,28 +128,21 @@ where
 {
     type SystemData = Read<'a, AssetStorage<Model>>;
 
-    fn process(&mut self, models: &mut Self::SystemData) {
+    fn load_voxel(
+        &mut self,
+        models: &mut Self::SystemData,
+        coord: [isize; 3],
+    ) -> VoxelSourceResult<V> {
         if let Some(model) = models.get(&self.handle) {
+            let dimensions = model.dimensions.clone();
+            let voxels = model.voxels.clone();
             let w = Voxel::<V>::WIDTH as isize;
             for i in 0..3 {
-                let d = model.dimensions[i] as isize;
+                let d = dimensions[i] as isize;
                 self.limits.to[i] = Some(if d % w == 0 { d / w - 1 } else { d / w });
             }
-            for request in self.requests.drain(..) {
-                request(model);
-            }
-        }
-    }
 
-    fn load(&mut self, coord: [isize; 3]) -> VoxelFuture<V> {
-        let handle = Arc::new(Mutex::new(None));
-
-        let load = Load::<V> {
-            handle: handle.clone(),
-        };
-
-        self.requests.push(Box::new(move |model| {
-            if let Ok(mut guard) = handle.lock() {
+            VoxelSourceResult::Loading(Box::new(move || {
                 let w = Voxel::<V>::WIDTH as isize;
                 let mut from = [0, 0, 0];
                 let mut to = [0, 0, 0];
@@ -161,7 +150,7 @@ where
 
                 for i in 0..3 {
                     from[i] = (coord[i] * w).max(0) as usize;
-                    to[i] = (coord[i] * w + w).max(0).min(model.dimensions[i] as isize) as usize;
+                    to[i] = (coord[i] * w + w).max(0).min(dimensions[i] as isize) as usize;
                     if to[i] > from[i] {
                         range[i] = to[i] - from[i];
                     }
@@ -173,44 +162,30 @@ where
                         let x = from[0] + x;
                         let y = from[1] + y;
                         let z = from[2] + z;
-                        let index = x
-                            + y * model.dimensions[0]
-                            + z * model.dimensions[0] * model.dimensions[1];
-                        model.voxels[index].map(|id| id.into()).unwrap_or_default()
+                        let index = x + y * dimensions[0] + z * dimensions[0] * dimensions[1];
+                        voxels[index].map(|id| id.into()).unwrap_or_default()
                     } else {
                         Default::default()
                     }
                 });
 
-                *guard = Some(Voxel::from_iter(Default::default(), iter));
-            }
-        }));
-        Box::new(load)
+                Voxel::from_iter(Default::default(), iter)
+            }))
+        } else {
+            VoxelSourceResult::Retry
+        }
     }
 
-    fn drop(&mut self, _: [isize; 3], _: Voxel<V>) {
-        // do nothing
+    fn drop_voxel(
+        &mut self,
+        _: &mut Self::SystemData,
+        _: [isize; 3],
+        _: Voxel<V>,
+    ) -> Box<dyn FnOnce() + Send> {
+        Box::new(|| ())
     }
 
     fn limits(&self) -> Limits {
         self.limits.clone()
-    }
-}
-
-struct Load<V: Data> {
-    handle: Arc<Mutex<Option<Voxel<V>>>>,
-}
-
-impl<V: Data> Future for Load<V> {
-    type Item = Voxel<V>;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-
-    fn poll(&mut self) -> Result<Async<Voxel<V>>, Self::Error> {
-        let mut guard = self.handle.lock().unwrap();
-
-        match guard.take() {
-            Some(voxel) => Ok(Async::Ready(voxel)),
-            None => Ok(Async::NotReady),
-        }
     }
 }
