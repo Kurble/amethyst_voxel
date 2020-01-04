@@ -127,7 +127,7 @@ impl<V: Data> Raycast for VoxelWorld<V> {
                 current_i[i] -= 1;
             }
         }
-        let hit = |coord: [isize; 3]| -> Option<Ray<Self::Child>> {
+        let hit = |current: Vec3, coord: [isize; 3]| -> Option<Ray<Self::Child>> {
             if (0..3).fold(true, |b, i| {
                 b && coord[i] >= 0 && coord[i] < self.dims[i] as isize
             }) {
@@ -157,13 +157,34 @@ impl<V: Data> Raycast for VoxelWorld<V> {
                             return Some(sub);
                         }
                     }
+                } else {
+                    // todo collide with "nothing"
+                    let current = (current
+                        + vec3(
+                            self.origin[0] as f32,
+                            self.origin[1] as f32,
+                            self.origin[2] as f32,
+                        ))
+                        * self.scale;
+                    let intersection =
+                        ray.transform * vec4(current[0], current[1], current[2], 1.0);
+
+                    return Some(Ray {
+                        transform: ray.transform,
+                        origin: ray.origin,
+                        direction: ray.direction,
+                        length: ray.length,
+                        index: None,
+                        intersection: Some(vec4_to_vec3(&intersection)),
+                        marker: PhantomData,
+                    });
                 }
             }
             None
         };
 
         // don't forget to skip the starting position
-        if let Some(hit) = hit(current_i) {
+        if let Some(hit) = hit(current, current_i) {
             return Some(hit);
         }
 
@@ -185,13 +206,13 @@ impl<V: Data> Raycast for VoxelWorld<V> {
                     if ray.direction[d] < 0.0 {
                         current_i[d] -= 1;
                         current[d] = current_i[d] as f32;
-                        if let Some(hit) = hit(current_i) {
+                        if let Some(hit) = hit(current, current_i) {
                             return Some(hit);
                         }
                     } else {
                         current_i[d] += 1;
                         current[d] = current_i[d] as f32;
-                        if let Some(hit) = hit(current_i) {
+                        if let Some(hit) = hit(current, current_i) {
                             return Some(hit);
                         }
                     }
