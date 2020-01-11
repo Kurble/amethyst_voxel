@@ -14,7 +14,7 @@ The current features of amethyst-voxel are:
 - Simple movement of entities through voxel worlds, not physics based.
 
 ## Development status
-Amethyst-voxel is still in development, and it's final goals have not quite been defined yet. If you want to discuss the project join us on the [amethyst-voxel discord server](https://discord.gg/7gcf2Z)!
+Amethyst-voxel is still in development, and it's final goals have not quite been defined yet. If you want to discuss the project join us on the [amethyst-voxel discord server](https://discord.gg/ZJcan7E)!
 
 ## Documentation
 To get started check out any of the following documentation resources:
