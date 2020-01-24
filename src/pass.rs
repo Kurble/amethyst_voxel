@@ -234,7 +234,7 @@ where
 
                     if mesh.dirty && triangulate_limit > 0 {
                         let pos = vec3(0.0, 0.0, 0.0);
-                        let scale = 16.0;
+                        let scale = (1 << V::SUBDIV) as f32;
                         let new_mesh = build_mesh(
                             &mesh,
                             VoxelContext::new(&mesh.data),
