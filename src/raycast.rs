@@ -2,7 +2,6 @@ use crate::triangulate::Triangulate;
 use crate::voxel::{Data, Voxel};
 use crate::world::VoxelWorld;
 use nalgebra_glm::*;
-//use nalgebra_glm::convert
 use std::any::Any;
 use std::ops::{Deref, DerefMut};
 
