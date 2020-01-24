@@ -64,10 +64,18 @@ where
         } else {
             self.triangulate_limit
         };
+
         plan.extend_target(self.target, move |ctx| {
             ctx.add(
                 RenderOrder::Opaque,
-                DrawVoxelDesc::<B, D, V>::new(limit).builder(),
+                DrawVoxelDesc::<B, D, V>::new(limit, false).builder(),
+            )?;
+            Ok(())
+        });
+        plan.extend_target(self.target, move |ctx| {
+            ctx.add(
+                RenderOrder::Transparent,
+                DrawVoxelDesc::<B, D, V>::new(limit, true).builder(),
             )?;
             Ok(())
         });

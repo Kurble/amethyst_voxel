@@ -43,8 +43,18 @@ impl<'a, T: Data> Context<T> for VoxelContext<'a, T> {
         false
     }
 
-    fn render(&self, _: isize, _: isize, _: isize) -> bool {
-        false
+    fn render(&self, x: isize, y: isize, z: isize) -> bool {
+        if x >= 0
+            && x < Voxel::<T>::WIDTH as isize
+            && y >= 0
+            && y < Voxel::<T>::WIDTH as isize
+            && z >= 0
+            && z < Voxel::<T>::WIDTH as isize
+        {
+            false
+        } else {
+            true
+        }
     }
 
     fn child(&self, x: isize, y: isize, z: isize) -> DetailContext<T> {

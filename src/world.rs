@@ -110,6 +110,36 @@ impl<T: Data> VoxelWorld<T> {
         }
     }
 
+    pub fn get(&self, mut coord: [isize; 3]) -> Option<&Voxel<T>> {
+        for i in 0..3 {
+            coord[i] -= self.origin[i];
+            if coord[i] < 0 || coord[i] >= self.dims[i] as isize {
+                return None;
+            }
+        }
+
+        let index = coord[0] as usize
+            + coord[1] as usize * self.dims[0]
+            + coord[2] as usize * self.dims[0] * self.dims[1];
+
+        self.data[index].get().map(|r| &r.data)
+    }
+
+    pub fn get_mut(&mut self, mut coord: [isize; 3]) -> Option<&mut Voxel<T>> {
+        for i in 0..3 {
+            coord[i] -= self.origin[i];
+            if coord[i] < 0 || coord[i] >= self.dims[i] as isize {
+                return None;
+            }
+        }
+
+        let index = coord[0] as usize
+            + coord[1] as usize * self.dims[0]
+            + coord[2] as usize * self.dims[0] * self.dims[1];
+
+        self.get_ready_chunk(index).map(|r| &mut r.data)
+    }
+
     pub(crate) fn get_ready_chunk(&mut self, index: usize) -> Option<&mut VoxelRender<T>> {
         if self.data[index].get_mut().map(|c| c.dirty).unwrap_or(false) {
             if self.available(0, index, 1) {

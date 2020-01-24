@@ -42,6 +42,7 @@ use std::marker::PhantomData;
 pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef, V: Data> {
     marker: PhantomData<(B, D, V)>,
     triangulate_limit: usize,
+    transparency: bool,
 }
 
 #[derive(Derivative)]
@@ -58,6 +59,7 @@ pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: Data> {
     models: DynamicVertexBuffer<B, VertexArgs>,
     marker: PhantomData<(T, V)>,
     triangulate_limit: usize,
+    transparency: bool,
 }
 
 #[derive(Debug)]
@@ -76,10 +78,11 @@ impl AsAttribute for Surface {
 }
 
 impl<B: Backend, T: Base3DPassDef, V: Data> DrawVoxelDesc<B, T, V> {
-    pub fn new(triangulate_limit: usize) -> Self {
+    pub fn new(triangulate_limit: usize, transparency: bool) -> Self {
         Self {
             marker: PhantomData,
             triangulate_limit,
+            transparency,
         }
     }
 }
@@ -123,7 +126,7 @@ where
             &vertex_format_base,
             &vertex_format_skinned,
             false,
-            false,
+            self.transparency,
             vec![
                 env.raw_layout(),
                 materials.raw_layout(),
@@ -146,6 +149,7 @@ where
             models: DynamicVertexBuffer::new(),
             marker: PhantomData,
             triangulate_limit: self.triangulate_limit,
+            transparency: self.transparency,
         }))
     }
 }
@@ -220,6 +224,7 @@ where
         let materials_ref = &mut self.materials;
         let statics_ref = &mut self.static_batches;
         let meshes_ref = &mut self.meshes;
+        let transparency = self.transparency;
 
         let mut triangulate_limit = self.triangulate_limit;
 
@@ -227,103 +232,110 @@ where
             (&mut meshes, &transforms, tints.maybe())
                 .join()
                 .filter_map(|(mesh, tform, tint)| {
-                    let id = match mesh.mesh {
-                        Some(mesh_id) => mesh_id,
-                        None => meshes_ref.len(),
-                    };
-
-                    if mesh.dirty && triangulate_limit > 0 {
-                        let pos = vec3(0.0, 0.0, 0.0);
-                        let scale = (1 << V::SUBDIV) as f32;
-                        let new_mesh = build_mesh(
-                            &mesh,
-                            VoxelContext::new(&mesh.data),
-                            pos,
-                            scale,
-                            &materials,
-                            queue,
-                            factory,
-                        );
-
-                        if id == meshes_ref.len() {
-                            meshes_ref.push(new_mesh);
-                        } else {
-                            meshes_ref[id] = new_mesh;
-                        }
-
-                        mesh.mesh = Some(id);
-                        mesh.dirty = false;
-
-                        triangulate_limit -= 1;
-                    }
-
-                    mesh.mesh
-                        .map(|id| ((mat, id), VertexArgs::from_object_data(tform, tint)))
-                })
-                .for_each_group(|(mat, id), data| {
-                    if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
-                        statics_ref.insert(mat, id, data.drain(..));
-                    }
-                });
-
-            (&mut worlds)
-                .join()
-                .flat_map(|world| {
-                    for i in 0..world.data.len() {
-                        let build_id = if let Some(chunk) = world.get_ready_chunk(i) {
-                            if chunk.dirty && triangulate_limit > 0 {
-                                triangulate_limit -= 1;
-                                chunk.mesh = match chunk.mesh {
-                                    Some(id) => Some(id),
-                                    None => Some(meshes_ref.len()),
-                                };
-                                chunk.dirty = false;
-                                chunk.mesh
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
+                    if tint.map(|tint| tint.0.alpha < 1.0).unwrap_or(false) != transparency {
+                        None
+                    } else {
+                        let id = match mesh.mesh {
+                            Some(mesh_id) => mesh_id,
+                            None => meshes_ref.len(),
                         };
 
-                        if let Some(id) = build_id {
-                            let x = ((i) % world.dims[0]) as isize;
-                            let y = ((i / (world.dims[0])) % world.dims[1]) as isize;
-                            let z =
-                                ((i / (world.dims[0] * world.dims[1])) % world.dims[2]) as isize;
-                            let scale = world.scale;
-                            let pos = vec3(
-                                (x + world.origin[0]) as f32 * scale,
-                                (y + world.origin[1]) as f32 * scale,
-                                (z + world.origin[2]) as f32 * scale,
+                        if mesh.dirty && triangulate_limit > 0 {
+                            let pos = vec3(0.0, 0.0, 0.0);
+                            let scale = (1 << V::SUBDIV) as f32;
+                            let new_mesh = build_mesh(
+                                &mesh,
+                                VoxelContext::new(&mesh.data),
+                                pos,
+                                scale,
+                                &materials,
+                                queue,
+                                factory,
                             );
-                            let chunk = world.data[i].get().unwrap();
-                            let context = WorldContext::new([x, y, z], world);
-                            let new_mesh =
-                                build_mesh(chunk, context, pos, scale, &materials, queue, factory);
+
                             if id == meshes_ref.len() {
                                 meshes_ref.push(new_mesh);
                             } else {
                                 meshes_ref[id] = new_mesh;
                             }
-                        }
-                    }
 
-                    world.data.iter().filter_map(|chunk| match chunk {
-                        Chunk::Ready(chunk) => chunk.mesh.map(|id| {
-                            (
-                                (mat, id),
-                                VertexArgs::from_object_data(&Transform::default(), None),
-                            )
-                        }),
-                        _ => None,
-                    })
+                            mesh.mesh = Some(id);
+                            mesh.dirty = false;
+
+                            triangulate_limit -= 1;
+                        }
+
+                        mesh.mesh
+                            .map(|id| ((mat, id), VertexArgs::from_object_data(tform, tint)))
+                    }
                 })
                 .for_each_group(|(mat, id), data| {
                     if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
                         statics_ref.insert(mat, id, data.drain(..));
                     }
                 });
+
+            if !transparency {
+                (&mut worlds)
+                    .join()
+                    .flat_map(|world| {
+                        for i in 0..world.data.len() {
+                            let build_id = if let Some(chunk) = world.get_ready_chunk(i) {
+                                if chunk.dirty && triangulate_limit > 0 {
+                                    triangulate_limit -= 1;
+                                    chunk.mesh = match chunk.mesh {
+                                        Some(id) => Some(id),
+                                        None => Some(meshes_ref.len()),
+                                    };
+                                    chunk.dirty = false;
+                                    chunk.mesh
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+
+                            if let Some(id) = build_id {
+                                let x = ((i) % world.dims[0]) as isize;
+                                let y = ((i / (world.dims[0])) % world.dims[1]) as isize;
+                                let z = ((i / (world.dims[0] * world.dims[1])) % world.dims[2])
+                                    as isize;
+                                let scale = world.scale;
+                                let pos = vec3(
+                                    (x + world.origin[0]) as f32 * scale,
+                                    (y + world.origin[1]) as f32 * scale,
+                                    (z + world.origin[2]) as f32 * scale,
+                                );
+                                let chunk = world.data[i].get().unwrap();
+                                let context = WorldContext::new([x, y, z], world);
+                                let new_mesh = build_mesh(
+                                    chunk, context, pos, scale, &materials, queue, factory,
+                                );
+                                if id == meshes_ref.len() {
+                                    meshes_ref.push(new_mesh);
+                                } else {
+                                    meshes_ref[id] = new_mesh;
+                                }
+                            }
+                        }
+
+                        world.data.iter().filter_map(|chunk| match chunk {
+                            Chunk::Ready(chunk) => chunk.mesh.map(|id| {
+                                (
+                                    (mat, id),
+                                    VertexArgs::from_object_data(&Transform::default(), None),
+                                )
+                            }),
+                            _ => None,
+                        })
+                    })
+                    .for_each_group(|(mat, id), data| {
+                        if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
+                            statics_ref.insert(mat, id, data.drain(..));
+                        }
+                    });
+            }
         }
 
         self.static_batches.prune();
