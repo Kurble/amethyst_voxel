@@ -23,6 +23,8 @@ pub struct Intersection {
     pub index: usize,
     /// The position of this intersection.
     pub position: Vec3,
+    /// The normal of this intersection.
+    pub normal: Vec3,
 }
 
 /// A "root" type that can create rays as well as being raycasted.
@@ -38,7 +40,7 @@ pub trait Raycast: Any + Sized {
     /// Cast a `Ray` on self, returning a ray that can be casted on the child type.
     fn cast(&self, ray: &Ray) -> Option<Intersection>;
 
-    fn check(&self, ray: &Ray, current: Vec3, coord: [isize; 3]) -> Option<Intersection>;
+    fn check(&self, ray: &Ray, current: Vec3, coord: [isize; 3], normal: Vec3) -> Option<Intersection>;
 
     /// Immutably retrieve the child for the casted ray.
     fn get(&self, intersection: &Intersection) -> Option<&Self::Child>;
@@ -135,7 +137,7 @@ impl<V: Data> Raycast for VoxelWorld<V> {
         })
     }
 
-    fn check(&self, ray: &Ray, current: Vec3, coord: [isize; 3]) -> Option<Intersection> {
+    fn check(&self, ray: &Ray, current: Vec3, coord: [isize; 3], normal: Vec3) -> Option<Intersection> {
         if (0..3).fold(true, |b, i| {
             b && coord[i] >= 0 && coord[i] < self.dims[i] as isize
         }) {
@@ -162,6 +164,7 @@ impl<V: Data> Raycast for VoxelWorld<V> {
                             inner: Some(Box::new(sub)),
                             index: i,
                             position: current,
+                            normal,
                         });
                     }
                 }
@@ -170,6 +173,7 @@ impl<V: Data> Raycast for VoxelWorld<V> {
                     inner: None,
                     index: 0,
                     position: current,
+                    normal,
                 });
             }
         }
@@ -224,7 +228,7 @@ impl<T: Data> Raycast for Voxel<T> {
         })
     }
 
-    fn check(&self, ray: &Ray, current: Vec3, coord: [isize; 3]) -> Option<Intersection> {
+    fn check(&self, ray: &Ray, current: Vec3, coord: [isize; 3], normal: Vec3) -> Option<Intersection> {
         if (0..3).fold(true, |b, i| {
             b && coord[i] >= 0 && coord[i] < Self::WIDTH as isize
         }) {
@@ -238,6 +242,7 @@ impl<T: Data> Raycast for Voxel<T> {
                                 inner: None,
                                 index: i,
                                 position: current,
+                                normal,
                             });
                         }
                         Voxel::Detail { .. } => {
@@ -259,6 +264,7 @@ impl<T: Data> Raycast for Voxel<T> {
                                     inner: Some(Box::new(sub)),
                                     index: i,
                                     position: current,
+                                    normal,
                                 });
                             }
                         }
@@ -302,8 +308,14 @@ fn cast<R: Raycast>(
         }
     }
 
+    let normals = [
+        vec3(1.0, 0.0, 0.0),
+        vec3(0.0, 1.0, 0.0),
+        vec3(0.0, 0.0, 1.0),
+    ];
+
     // don't forget to skip the starting position
-    if let Some(hit) = raycast.check(ray, current, current_i) {
+    if let Some(hit) = raycast.check(ray, current, current_i, vec3(0.0, 0.0, 0.0)) {
         return Some(hit);
     }
 
@@ -325,13 +337,13 @@ fn cast<R: Raycast>(
                 if direction[d] < 0.0 {
                     current_i[d] -= 1;
                     current[d] = current_i[d] as f32 + 1.0;
-                    if let Some(hit) = raycast.check(ray, current, current_i) {
+                    if let Some(hit) = raycast.check(ray, current, current_i, normals[d]) {
                         return Some(hit);
                     }
                 } else {
                     current_i[d] += 1;
                     current[d] = current_i[d] as f32;
-                    if let Some(hit) = raycast.check(ray, current, current_i) {
+                    if let Some(hit) = raycast.check(ray, current, current_i, -normals[d]) {
                         return Some(hit);
                     }
                 }
