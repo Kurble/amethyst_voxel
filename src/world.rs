@@ -122,7 +122,7 @@ impl<T: Data> VoxelWorld<T> {
             + coord[1] as usize * self.dims[0]
             + coord[2] as usize * self.dims[0] * self.dims[1];
 
-        self.data[index].get().map(|r| &r.data)
+        self.data[index].get().map(|r| r.deref())
     }
 
     pub fn get_mut(&mut self, mut coord: [isize; 3]) -> Option<&mut Voxel<T>> {
@@ -137,7 +137,7 @@ impl<T: Data> VoxelWorld<T> {
             + coord[1] as usize * self.dims[0]
             + coord[2] as usize * self.dims[0] * self.dims[1];
 
-        self.get_ready_chunk(index).map(|r| &mut r.data)
+        self.data[index].get_mut().map(|r| r.deref_mut())
     }
 
     pub(crate) fn get_ready_chunk(&mut self, index: usize) -> Option<&mut VoxelRender<T>> {
