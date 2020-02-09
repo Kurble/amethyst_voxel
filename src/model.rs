@@ -13,9 +13,9 @@ use std::sync::Arc;
 
 /// Data type for the `Model` asset.
 pub struct ModelData {
-    materials: Arc<[Arc<dyn VoxelMaterial>]>,
-    voxels: Vec<(usize, usize)>,
-    dimensions: [usize; 3],
+    pub materials: Arc<[Arc<dyn VoxelMaterial>]>,
+    pub voxels: Vec<(usize, usize)>,
+    pub dimensions: [usize; 3],
 }
 
 /// A predefined model of voxels.
