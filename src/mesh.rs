@@ -3,16 +3,8 @@ use amethyst::{
     core::{ArcThreadPool, Time},
     ecs::prelude::*,
     renderer::{
-        batch::{GroupIterator, TwoLevelBatch},
-        pass::Base3DPassDef,
-        pipeline::{PipelineDescBuilder, PipelinesBuilder},
-        pod::{SkinnedVertexArgs, VertexArgs},
         rendy::{command::QueueId, factory::Factory, mesh::MeshBuilder},
-        resources::Tint,
-        skinning::JointCombined,
-        submodules::{DynamicVertexBuffer, EnvironmentSub, MaterialId, MaterialSub, SkinningSub},
         types::{Backend, Mesh},
-        util,
     },
 };
 
@@ -31,7 +23,7 @@ pub struct VoxelMesh {
     pub(crate) inner: Option<Mesh>,
 }
 
-pub struct VoxelMeshProcessorSystem<B: Backend, V: Data>(PhantomData<(B, V)>);
+pub struct VoxelMeshProcessorSystem<B: Backend, V: Data + Default>(PhantomData<(B, V)>);
 
 impl Asset for VoxelMesh {
     const NAME: &'static str = "VoxelMesh";
@@ -48,6 +40,12 @@ pub struct VoxelMeshProcessorSystemData<'a, B: Backend> {
     strategy: Option<Read<'a, HotReloadStrategy>>,
     factory: ReadExpect<'a, Factory<B>>,
     material_storage: WriteExpect<'a, VoxelMaterialStorage>,
+}
+
+impl<B: Backend, V: Data + Default> VoxelMeshProcessorSystem<B, V> {
+    pub fn new() -> Self {
+        VoxelMeshProcessorSystem(PhantomData)
+    }
 }
 
 impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessorSystem<B, V> {

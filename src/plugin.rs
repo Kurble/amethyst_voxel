@@ -1,8 +1,10 @@
+use crate::mesh::VoxelMesh;
 use crate::pass::*;
 use crate::voxel::Data;
 use crate::world::VoxelRender;
 
 use amethyst::{
+    assets::Handle,
     core::ecs::{DispatcherBuilder, World, WorldExt},
     error::Error,
     renderer::{
@@ -41,14 +43,20 @@ impl<B, D, V> RenderPlugin<B> for RenderVoxel<D, V>
 where
     B: Backend,
     D: Base3DPassDef,
-    V: Data,
+    V: Data + Default,
 {
     fn on_build<'a, 'b>(
         &mut self,
         world: &mut World,
-        _builder: &mut DispatcherBuilder<'a, 'b>,
+        builder: &mut DispatcherBuilder<'a, 'b>,
     ) -> Result<(), Error> {
+        world.register::<Handle<VoxelMesh>>();
         world.register::<VoxelRender<V>>();
+        builder.add(
+            crate::mesh::VoxelMeshProcessorSystem::<B, V>::new(),
+            "voxel_mesh_processor",
+            &[],
+        );
         //builder.add(VisibilitySortingSystem::new(), "visibility_system", &[]);
         Ok(())
     }

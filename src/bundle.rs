@@ -56,7 +56,7 @@ impl VoxelBundle {
                 crate::movement::MovementSystem::<V>::new(),
                 "voxel_movement",
                 &[],
-            )
+            );
         }));
         self
     }
