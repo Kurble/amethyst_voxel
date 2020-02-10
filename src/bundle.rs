@@ -50,13 +50,8 @@ impl VoxelBundle {
 
     /// Configure systems that work with `Data` `V`.
     pub fn with_voxel<V: Data>(mut self) -> Self {
-        self.systems.push(Box::new(|world, builder| {
+        self.systems.push(Box::new(|world, _builder| {
             world.register::<VoxelWorld<V>>();
-            builder.add(
-                crate::movement::MovementSystem::<V>::new(),
-                "voxel_movement",
-                &[],
-            );
         }));
         self
     }

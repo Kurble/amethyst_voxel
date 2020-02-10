@@ -22,7 +22,6 @@ use amethyst::{
 };
 use amethyst_voxel::prelude::*;
 use nalgebra_glm::*;
-use std::mem::replace;
 
 type MyPrefabData = BasicScenePrefab<(Vec<Position>, Vec<Normal>, Vec<TexCoord>), f32>;
 

@@ -8,7 +8,8 @@ pub use crate::{
     raycast::{Raycast, RaycastBase},
     vox::VoxFormat,
     voxel::{Data, Voxel},
-    world::{Limits, VoxelRender, VoxelSource, VoxelSourceResult, VoxelWorld},
+    world::{Limits, VoxelSource, VoxelSourceResult, VoxelWorld, VoxelWorldAccess},
+    mesh::{VoxelMesh, DynamicVoxelMesh},
 };
 
 pub type RenderVoxelPbr<V> =

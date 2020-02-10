@@ -51,6 +51,9 @@ pub enum Voxel<T: Data> {
         /// User data for the voxel.
         data: T,
     },
+
+    /// An empty voxel without data
+    Placeholder,
 }
 
 impl<T: Data> Voxel<T> {
@@ -103,6 +106,7 @@ impl<T: Data> Voxel<T> {
             Voxel::Empty { .. } => None,
             Voxel::Detail { ref detail, .. } => detail.get(index),
             Voxel::Material { .. } => Some(self),
+            Voxel::Placeholder => None,
         }
     }
 
@@ -112,6 +116,7 @@ impl<T: Data> Voxel<T> {
             Voxel::Empty { .. } => None,
             Voxel::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
             Voxel::Material { .. } => Some(self),
+            Voxel::Placeholder => None,
         }
     }
 }
@@ -141,6 +146,7 @@ impl<T: Data> Deref for Voxel<T> {
             Voxel::Empty { ref data, .. }
             | Voxel::Detail { ref data, .. }
             | Voxel::Material { ref data, .. } => data,
+            Voxel::Placeholder => panic!("Placeholder dereferenced"),
         }
     }
 }
@@ -151,6 +157,7 @@ impl<T: Data> DerefMut for Voxel<T> {
             Voxel::Empty { ref mut data, .. }
             | Voxel::Detail { ref mut data, .. }
             | Voxel::Material { ref mut data, .. } => data,
+            Voxel::Placeholder => panic!("Placeholder dereferenced")
         }
     }
 }

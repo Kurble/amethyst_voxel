@@ -1,7 +1,6 @@
 use crate::mesh::VoxelMesh;
 use crate::pass::*;
 use crate::voxel::Data;
-use crate::world::VoxelRender;
 
 use amethyst::{
     assets::Handle,
@@ -51,7 +50,6 @@ where
         builder: &mut DispatcherBuilder<'a, 'b>,
     ) -> Result<(), Error> {
         world.register::<Handle<VoxelMesh>>();
-        world.register::<VoxelRender<V>>();
         builder.add(
             crate::mesh::VoxelMeshProcessorSystem::<B, V>::new(),
             "voxel_mesh_processor",

@@ -12,18 +12,14 @@ use amethyst::renderer::{
 };
 
 use crate::{
-    ambient_occlusion::*,
-    context::{Context, WorldContext},
     material::VoxelMaterialStorage,
     mesh::*,
     voxel::Data,
-    world::{Chunk, VoxelRender, VoxelWorld},
 };
 use amethyst::core::{
-    ecs::{Join, Read, ReadStorage, SystemData, World, WriteStorage},
+    ecs::{Join, Read, ReadStorage, SystemData, World},
     transform::Transform,
 };
-use nalgebra_glm::*;
 use rendy::{
     command::{QueueId, RenderPassEncoder},
     factory::Factory,
@@ -32,7 +28,7 @@ use rendy::{
         GraphContext, NodeBuffer, NodeImage,
     },
     hal::{self, device::Device, format::Format, pso},
-    mesh::{AsAttribute, AsVertex, MeshBuilder, VertexFormat},
+    mesh::{AsAttribute, AsVertex, VertexFormat},
     shader::{Shader, SpirvShader},
     util::types::vertex::{Normal, Position, Tangent},
 };
@@ -212,14 +208,12 @@ where
             //visibility,
             mesh_storage,
             meshes,
-            mut worlds,
             materials,
             transforms,
             tints,
         ) = <(
             Read<'_, AssetStorage<VoxelMesh>>,
             ReadStorage<'_, Handle<VoxelMesh>>,
-            WriteStorage<'_, VoxelWorld<V>>,
             Read<'_, VoxelMaterialStorage>,
             ReadStorage<'_, Transform>,
             ReadStorage<'_, Tint>,
@@ -255,68 +249,6 @@ where
                         }
                     }
                 });
-
-            if !transparency {
-                (&mut worlds)
-                    .join()
-                    .flat_map(|world| {
-                        for i in 0..world.data.len() {
-                            let build_id = if let Some(chunk) = world.get_ready_chunk(i) {
-                                if chunk.dirty && triangulate_limit > 0 {
-                                    triangulate_limit -= 1;
-                                    chunk.mesh = match chunk.mesh {
-                                        Some(id) => Some(id),
-                                        None => Some(meshes_ref.len()),
-                                    };
-                                    chunk.dirty = false;
-                                    chunk.mesh
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            };
-
-                            if let Some(id) = build_id {
-                                let x = ((i) % world.dims[0]) as isize;
-                                let y = ((i / (world.dims[0])) % world.dims[1]) as isize;
-                                let z = ((i / (world.dims[0] * world.dims[1])) % world.dims[2])
-                                    as isize;
-                                let scale = world.scale;
-                                let pos = vec3(
-                                    (x + world.origin[0]) as f32 * scale,
-                                    (y + world.origin[1]) as f32 * scale,
-                                    (z + world.origin[2]) as f32 * scale,
-                                );
-                                let chunk = world.data[i].get().unwrap();
-                                let context = WorldContext::new([x, y, z], world);
-                                let new_mesh = build_mesh(
-                                    chunk, context, pos, scale, &materials, queue, factory,
-                                );
-                                if id == meshes_ref.len() {
-                                    meshes_ref.push(new_mesh);
-                                } else {
-                                    meshes_ref[id] = new_mesh;
-                                }
-                            }
-                        }
-
-                        world.data.iter().filter_map(|chunk| match chunk {
-                            Chunk::Ready(chunk) => chunk.mesh.map(|id| {
-                                (
-                                    (mat, MeshRef::PassOwned(id)),
-                                    VertexArgs::from_object_data(&Transform::default(), None),
-                                )
-                            }),
-                            _ => None,
-                        })
-                    })
-                    .for_each_group(|(mat, id), data| {
-                        if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
-                            statics_ref.insert(mat, id, data.drain(..));
-                        }
-                    });
-            }
         }
 
         self.static_batches.prune();
@@ -407,56 +339,6 @@ lazy_static::lazy_static! {
         pso::ShaderStageFlags::VERTEX,
         "main",
     );
-}
-
-fn build_mesh<B, V, C>(
-    voxel: &VoxelRender<V>,
-    context: C,
-    pos: Vec3,
-    scale: f32,
-    materials: &VoxelMaterialStorage,
-    queue: QueueId,
-    factory: &Factory<B>,
-) -> Option<Mesh>
-where
-    B: Backend,
-    V: Data,
-    C: Context<V>,
-{
-    let ao = AmbientOcclusion::build(&voxel.data, &context);
-
-    let crate::triangulate::Mesh {
-        pos,
-        nml,
-        tan,
-        tex,
-        ind,
-    } = crate::triangulate::Mesh::build::<V, C>(&voxel.data, &ao, &context, pos, scale);
-
-    let tex: Vec<_> = tex
-        .into_iter()
-        .map(|texturing| {
-            let [u, v] = materials.coord(texturing.material_id, texturing.side, texturing.coord);
-            Surface {
-                tex_ao: [u, v, texturing.ao],
-            }
-        })
-        .collect();
-
-    if !pos.is_empty() {
-        Some(B::wrap_mesh(
-            MeshBuilder::new()
-                .with_vertices(pos)
-                .with_vertices(nml)
-                .with_vertices(tan)
-                .with_vertices(tex)
-                .with_indices(ind)
-                .build(queue, factory)
-                .unwrap(),
-        ))
-    } else {
-        None
-    }
 }
 
 #[allow(clippy::too_many_arguments)]

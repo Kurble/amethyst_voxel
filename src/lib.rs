@@ -9,7 +9,6 @@ extern crate derivative;
 
 pub mod material;
 pub mod model;
-pub mod movement;
 pub mod prefab;
 pub mod raycast;
 pub mod vox;

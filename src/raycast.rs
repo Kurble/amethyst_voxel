@@ -1,9 +1,10 @@
+use nalgebra_glm::*;
+use std::ops::{Deref, DerefMut};
+
 use crate::triangulate::Triangulate;
 use crate::voxel::{Data, Voxel};
-use crate::world::VoxelWorld;
-use nalgebra_glm::*;
-use std::any::Any;
-use std::ops::{Deref, DerefMut};
+use crate::world::{VoxelWorldAccess};
+
 
 /// A ray that can be used to perform raycasting on a specific type that implements `Raycast`.
 /// The ray is not compatible with other `Raycast` implementations.
@@ -34,7 +35,7 @@ pub trait RaycastBase: Raycast {
 }
 
 /// A type that can be raycasted.
-pub trait Raycast: Any + Sized {
+pub trait Raycast {
     type Child: Raycast;
 
     /// Cast a `Ray` on self, returning a ray that can be casted on the child type.
@@ -53,34 +54,6 @@ pub trait Raycast: Any + Sized {
 
     /// Mutably retrieve the child for the casted ray.
     fn get_mut(&mut self, ray: &Intersection) -> Option<&mut Self::Child>;
-
-    /// Get an immutable reference to a child voxel at a specific nesting depth.
-    fn select<T: Data>(&self, intersection: &Intersection, depth: usize) -> Option<&Voxel<T>> {
-        if depth == 0 {
-            (self as &dyn Any).downcast_ref()
-        } else {
-            intersection.inner.as_ref().and_then(move |inner| {
-                self.get(intersection)
-                    .and_then(|sub| sub.select(inner, depth - 1))
-            })
-        }
-    }
-
-    /// Get a mutable reference to a child voxel at a specific nesting depth.
-    fn select_mut<T: Data>(
-        &mut self,
-        intersection: &Intersection,
-        depth: usize,
-    ) -> Option<&mut Voxel<T>> {
-        if depth == 0 {
-            (self as &mut dyn Any).downcast_mut()
-        } else {
-            intersection.inner.as_ref().and_then(move |inner| {
-                self.get_mut(intersection)
-                    .and_then(|sub| sub.select_mut(inner, depth - 1))
-            })
-        }
-    }
 
     /// Get the distance on the ray to the nearest hit.
     fn hit(&self, ray: &Ray) -> Option<f32> {
@@ -114,7 +87,7 @@ impl Intersection {
     }
 }
 
-impl<V: Data> RaycastBase for VoxelWorld<V> {
+impl<'a, 'b, V: Data> RaycastBase for VoxelWorldAccess<'a, 'b, V> {
     fn ray(&self, origin: Vec3, direction: Vec3) -> Ray {
         Ray {
             origin,
@@ -125,20 +98,20 @@ impl<V: Data> RaycastBase for VoxelWorld<V> {
     }
 }
 
-impl<V: Data> Raycast for VoxelWorld<V> {
+impl<'a, 'b, V: Data> Raycast for VoxelWorldAccess<'a, 'b, V> {
     type Child = Voxel<V>;
 
     fn cast(&self, ray: &Ray) -> Option<Intersection> {
         let origin = vec3(
-            self.origin[0] as f32,
-            self.origin[1] as f32,
-            self.origin[2] as f32,
+            self.world.origin[0] as f32,
+            self.world.origin[1] as f32,
+            self.world.origin[2] as f32,
         );
         // the current location being checked on the ray
-        let current = ray.origin * (1.0 / self.scale) - origin;
+        let current = ray.origin * (1.0 / self.world.scale) - origin;
         cast(self, ray, current, ray.direction, 30).map(|mut intersection| {
             intersection.position = intersection.position + origin;
-            intersection.position = intersection.position * self.scale;
+            intersection.position = intersection.position * self.world.scale;
             intersection
         })
     }
@@ -151,19 +124,19 @@ impl<V: Data> Raycast for VoxelWorld<V> {
         normal: Vec3,
     ) -> Option<Intersection> {
         if (0..3).fold(true, |b, i| {
-            b && coord[i] >= 0 && coord[i] < self.dims[i] as isize
+            b && coord[i] >= 0 && coord[i] < self.world.dims[i] as isize
         }) {
             let i = coord[0] as usize
-                + coord[1] as usize * self.dims[0]
-                + coord[2] as usize * self.dims[0] * self.dims[1];
-            if let Some(voxel) = self.data[i].get() {
+                + coord[1] as usize * self.world.dims[0]
+                + coord[2] as usize * self.world.dims[0] * self.world.dims[1];
+            if let Some(voxel) = self.world.data[i].get().and_then(|e| self.chunks.get(e)) {
                 if voxel.visible() {
-                    let sc = self.scale;
+                    let sc = self.world.scale;
                     let s = scaling(&vec3(sc, sc, sc));
                     let t = translation(&vec3(
-                        (self.origin[0] + coord[0]) as f32 * sc,
-                        (self.origin[1] + coord[1]) as f32 * sc,
-                        (self.origin[2] + coord[2]) as f32 * sc,
+                        (self.world.origin[0] + coord[0]) as f32 * sc,
+                        (self.world.origin[1] + coord[1]) as f32 * sc,
+                        (self.world.origin[2] + coord[2]) as f32 * sc,
                     ));
                     let r = Ray {
                         transform: ray.transform * t * s,
@@ -193,12 +166,16 @@ impl<V: Data> Raycast for VoxelWorld<V> {
     }
 
     fn get(&self, intersection: &Intersection) -> Option<&Self::Child> {
-        self.data[intersection.index].get().map(|c| c.deref())
+        self.world.data[intersection.index]
+            .get()
+            .and_then(|e| self.chunks.get(e))
+            .map(|c| c.deref())
     }
 
     fn get_mut(&mut self, intersection: &Intersection) -> Option<&mut Self::Child> {
-        self.data[intersection.index]
-            .get_mut()
+        self.world.data[intersection.index]
+            .get()
+            .and_then(move |e| self.chunks.get_mut(e))
             .map(|c| c.deref_mut())
     }
 }
@@ -254,6 +231,7 @@ impl<T: Data> Raycast for Voxel<T> {
                 if voxel.visible() {
                     match voxel {
                         Voxel::Empty { .. } => (),
+                        Voxel::Placeholder => (),
                         Voxel::Material { .. } => {
                             return Some(Intersection {
                                 inner: None,

@@ -79,6 +79,7 @@ impl<T: Data> Triangulate<T> for Voxel<T> {
             Voxel::Empty { .. } => false,
             Voxel::Detail { ref data, .. } => !data.empty(),
             Voxel::Material { .. } => true,
+            Voxel::Placeholder => false,
         }
     }
 
@@ -87,6 +88,7 @@ impl<T: Data> Triangulate<T> for Voxel<T> {
             Voxel::Empty { .. } => true,
             Voxel::Detail { ref data, .. } => !data.solid(),
             Voxel::Material { .. } => false,
+            Voxel::Placeholder => true,
         }
     }
 
@@ -113,6 +115,8 @@ impl<T: Data> Triangulate<T> for Voxel<T> {
             Voxel::Material { material, .. } => {
                 triangulate_face::<T, S>(mesh, ao, origin, scale, material)
             }
+
+            Voxel::Placeholder => (),
         }
     }
 

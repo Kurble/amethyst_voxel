@@ -21,7 +21,7 @@ pub enum AmbientOcclusion<'a> {
 impl AmbientOcclusion<'_> {
     pub fn is_detail<T: Data>(voxel: &Voxel<T>) -> bool {
         match *voxel {
-            Voxel::Empty { .. } | Voxel::Material { .. } => false,
+            Voxel::Empty { .. } | Voxel::Material { .. } | Voxel::Placeholder => false,
             Voxel::Detail { .. } => true,
         }
     }
@@ -29,9 +29,11 @@ impl AmbientOcclusion<'_> {
     pub fn build<T: Data, C: Context<T>>(root: &Voxel<T>, neighbours: &C) -> Self {
         let w = Voxel::<T>::AO_WIDTH as isize;
         match *root {
-            Voxel::Empty { .. } | Voxel::Material { .. } => AmbientOcclusion::Small {
-                occlusion: [0xfff; 8],
-            },
+            Voxel::Empty { .. } | Voxel::Material { .. } | Voxel::Placeholder => {
+                AmbientOcclusion::Small {
+                    occlusion: [0xfff; 8],
+                }
+            }
 
             Voxel::Detail { ref detail, .. } => {
                 let bound = |x| x < 0 || x > Voxel::<T>::LAST as isize;
