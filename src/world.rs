@@ -355,6 +355,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                             }
                             Chunk::NotReady(request) => {
                                 let coord = [x + origin[0], y + origin[1], z + origin[2]];
+                                
                                 limit_visibility(
                                     &mut world.visibility,
                                     center,
@@ -365,7 +366,19 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                     ],
                                     world.scale,
                                 );
-                                Chunk::NotReady(request)
+
+                                match request.take() {
+                                    Some(chunk) => {
+                                        let entity = entities.create();
+                                        let mut mesh = DynamicVoxelMesh::new(chunk);
+                                        mesh.origin.x = coord[0] as f32 * world.scale;
+                                        mesh.origin.y = coord[1] as f32 * world.scale;
+                                        mesh.origin.z = coord[2] as f32 * world.scale;
+                                        meshes.insert(entity, mesh).ok();
+                                        Chunk::Ready(entity)
+                                    }
+                                    None => Chunk::NotReady(request),
+                                }
                             }
                             Chunk::Ready(voxel) => Chunk::Ready(voxel),
                         };

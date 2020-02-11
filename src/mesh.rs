@@ -126,6 +126,11 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessorSystem<
             .par_join()
             .filter_map(|(e, dynamic_mesh)| {
                 if dynamic_mesh.dirty {
+                    println!(
+                        "Triangulating mesh at {},{},{}",
+                        dynamic_mesh.origin.x, dynamic_mesh.origin.y, dynamic_mesh.origin.z
+                    );
+
                     // triangulate the mesh
                     let voxel_mesh = VoxelMesh {
                         inner: build_mesh(
