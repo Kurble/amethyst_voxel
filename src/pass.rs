@@ -231,13 +231,16 @@ where
         }
 
         self.static_batches.prune();
-        self.models.write(
+        if self.models.write(
             factory,
             index,
             self.static_batches.count() as u64,
             self.static_batches.data(),
-        );
-        PrepareResult::DrawRecord
+        ) {
+            PrepareResult::DrawRecord
+        } else {
+            PrepareResult::DrawReuse
+        }
     }
 
     fn draw_inline(

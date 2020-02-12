@@ -3,6 +3,11 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use crate::material::VoxelMaterialId;
+use crate::model::ModelData;
+
+use amethyst::assets::{Handle, Asset, ProcessingState, ProcessableAsset};
+use amethyst::ecs::*;
+use amethyst::error::*;
 
 /// Trait for user data associated with voxels.
 pub trait Data: 'static + Clone + Send + Sync {
@@ -160,4 +165,10 @@ impl<T: Data> DerefMut for Voxel<T> {
             Voxel::Placeholder => panic!("Placeholder dereferenced")
         }
     }
+}
+
+impl<T: Data> Asset for Voxel<T> {
+    const NAME: &'static str = "Voxel";
+    type Data = ModelData;
+    type HandleStorage = DenseVecStorage<Handle<Self>>;
 }
