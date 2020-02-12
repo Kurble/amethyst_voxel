@@ -7,15 +7,11 @@ use amethyst::renderer::{
     resources::Tint,
     skinning::JointCombined,
     submodules::{DynamicVertexBuffer, EnvironmentSub, MaterialId, MaterialSub, SkinningSub},
-    types::{Backend, Mesh},
+    types::Backend,
     util,
 };
 
-use crate::{
-    material::VoxelMaterialStorage,
-    mesh::*,
-    voxel::Data,
-};
+use crate::{material::VoxelMaterialStorage, mesh::*};
 use amethyst::core::{
     ecs::{Join, Read, ReadStorage, SystemData, World},
     transform::Transform,
@@ -37,33 +33,24 @@ use std::marker::PhantomData;
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug(bound = ""), Default(bound = ""))]
-pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef, V: Data> {
-    marker: PhantomData<(B, D, V)>,
-    triangulate_limit: usize,
+pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef> {
+    marker: PhantomData<(B, D)>,
     transparency: bool,
 }
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub struct DrawVoxel<B: Backend, T: Base3DPassDef, V: Data> {
+pub struct DrawVoxel<B: Backend, T: Base3DPassDef> {
     pipeline_basic: B::GraphicsPipeline,
     pipeline_layout: B::PipelineLayout,
-    static_batches: TwoLevelBatch<MaterialId, MeshRef, SmallVec<[VertexArgs; 4]>>,
-    meshes: Vec<Option<Mesh>>,
+    static_batches: TwoLevelBatch<MaterialId, u32, SmallVec<[VertexArgs; 4]>>,
     vertex_format_base: Vec<VertexFormat>,
     vertex_format_skinned: Vec<VertexFormat>,
     env: EnvironmentSub<B>,
     materials: MaterialSub<B, T::TextureSet>,
     models: DynamicVertexBuffer<B, VertexArgs>,
-    marker: PhantomData<(T, V)>,
-    triangulate_limit: usize,
+    marker: PhantomData<T>,
     transparency: bool,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum MeshRef {
-    PassOwned(usize),
-    StorageOwned(u32),
 }
 
 #[derive(Debug)]
@@ -81,21 +68,19 @@ impl AsAttribute for Surface {
     const FORMAT: Format = Format::Rgb32Sfloat;
 }
 
-impl<B: Backend, T: Base3DPassDef, V: Data> DrawVoxelDesc<B, T, V> {
-    pub fn new(triangulate_limit: usize, transparency: bool) -> Self {
+impl<B: Backend, T: Base3DPassDef> DrawVoxelDesc<B, T> {
+    pub fn new(transparency: bool) -> Self {
         Self {
             marker: PhantomData,
-            triangulate_limit,
             transparency,
         }
     }
 }
 
-impl<'a, B, T, V> RenderGroupDesc<B, World> for DrawVoxelDesc<B, T, V>
+impl<'a, B, T> RenderGroupDesc<B, World> for DrawVoxelDesc<B, T>
 where
     B: Backend,
     T: Base3DPassDef,
-    V: Data,
 {
     fn build(
         self,
@@ -141,18 +126,16 @@ where
         vertex_format_base.sort();
         vertex_format_skinned.sort();
 
-        Ok(Box::new(DrawVoxel::<B, T, V> {
+        Ok(Box::new(DrawVoxel::<B, T> {
             pipeline_basic: pipelines.remove(0),
             pipeline_layout,
             static_batches: Default::default(),
-            meshes: Vec::new(),
             vertex_format_base,
             vertex_format_skinned,
             env,
             materials,
             models: DynamicVertexBuffer::new(),
             marker: PhantomData,
-            triangulate_limit: self.triangulate_limit,
             transparency: self.transparency,
         }))
     }
@@ -190,16 +173,15 @@ impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
     }
 }
 
-impl<'a, B, T, V> RenderGroup<B, World> for DrawVoxel<B, T, V>
+impl<'a, B, T> RenderGroup<B, World> for DrawVoxel<B, T>
 where
     B: Backend,
     T: Base3DPassDef,
-    V: Data,
 {
     fn prepare(
         &mut self,
         factory: &Factory<B>,
-        queue: QueueId,
+        _queue: QueueId,
         index: usize,
         _subpass: hal::pass::Subpass<'_, B>,
         world: &World,
@@ -227,10 +209,7 @@ where
 
         let materials_ref = &mut self.materials;
         let statics_ref = &mut self.static_batches;
-        let meshes_ref = &mut self.meshes;
         let transparency = self.transparency;
-
-        let mut triangulate_limit = self.triangulate_limit;
 
         if let Some(mat) = materials.handle() {
             (&meshes, &transforms, tints.maybe())
@@ -245,7 +224,7 @@ where
                 .for_each_group(|(mat, id), data| {
                     if mesh_storage.contains_id(id) {
                         if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
-                            statics_ref.insert(mat, MeshRef::StorageOwned(id), data.drain(..));
+                            statics_ref.insert(mat, id, data.drain(..));
                         }
                     }
                 });
@@ -281,38 +260,20 @@ where
                     self.materials
                         .bind(&self.pipeline_layout, 1, mat_id, &mut encoder);
                     for (mesh_id, batch_data) in batches {
-                        match mesh_id {
-                            MeshRef::StorageOwned(id) => {
-                                if let Some(mesh) = unsafe {
-                                    mesh_storage
-                                        .get_by_id_unchecked(*id)
-                                        .inner
-                                        .as_ref()
-                                        .and_then(B::unwrap_mesh)
-                                } {
-                                    mesh.bind_and_draw(
-                                        0,
-                                        &self.vertex_format_base,
-                                        instances_drawn..instances_drawn + batch_data.len() as u32,
-                                        &mut encoder,
-                                    )
-                                    .unwrap();
-                                }
-                            }
-
-                            MeshRef::PassOwned(id) => {
-                                if let Some(mesh) =
-                                    self.meshes[*id].as_ref().and_then(B::unwrap_mesh)
-                                {
-                                    mesh.bind_and_draw(
-                                        0,
-                                        &self.vertex_format_base,
-                                        instances_drawn..instances_drawn + batch_data.len() as u32,
-                                        &mut encoder,
-                                    )
-                                    .unwrap();
-                                }
-                            }
+                        if let Some(mesh) = unsafe {
+                            mesh_storage
+                                .get_by_id_unchecked(*mesh_id)
+                                .inner
+                                .as_ref()
+                                .and_then(B::unwrap_mesh)
+                        } {
+                            mesh.bind_and_draw(
+                                0,
+                                &self.vertex_format_base,
+                                instances_drawn..instances_drawn + batch_data.len() as u32,
+                                &mut encoder,
+                            )
+                            .unwrap();
                         }
                         instances_drawn += batch_data.len() as u32;
                     }

@@ -3,13 +3,14 @@ use crate::voxel::*;
 
 use amethyst::{
     core::{
-        transform::Transform,
         ecs::storage::{GenericReadStorage, GenericWriteStorage},
+        transform::Transform,
     },
     ecs::prelude::*,
     renderer::{ActiveCamera, Camera},
 };
 use crossbeam::atomic::AtomicCell;
+use nalgebra_glm::*;
 use rayon::ThreadPool;
 
 use std::marker::PhantomData;
@@ -113,7 +114,7 @@ impl<T: Data> VoxelWorld<T> {
         }
     }
 
-    pub fn get<'a, R: 'a + GenericReadStorage<Component=DynamicVoxelMesh<T>>>(
+    pub fn get<'a, R: 'a + GenericReadStorage<Component = DynamicVoxelMesh<T>>>(
         &self,
         mut coord: [isize; 3],
         chunks: &'a R,
@@ -135,7 +136,7 @@ impl<T: Data> VoxelWorld<T> {
             .map(|m| m.deref())
     }
 
-    pub fn get_mut<'a, W: 'a + GenericWriteStorage<Component=DynamicVoxelMesh<T>>>(
+    pub fn get_mut<'a, W: 'a + GenericWriteStorage<Component = DynamicVoxelMesh<T>>>(
         &self,
         mut coord: [isize; 3],
         chunks: &'a mut W,
@@ -207,7 +208,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
         Entities<'s>,
         Read<'s, ActiveCamera>,
         ReadStorage<'s, Camera>,
-        ReadStorage<'s, Transform>,
+        WriteStorage<'s, Transform>,
         <S as VoxelSource<'s, T>>::SystemData,
     );
 
@@ -220,7 +221,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
             entities,
             active_camera,
             cameras,
-            transforms,
+            mut transforms,
             mut source_data,
         ): Self::SystemData,
     ) {
@@ -238,7 +239,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
             [m[0], m[1], m[2]]
         };
 
-        for (world, source) in (&mut worlds, &mut sources).join() {
+        for (world_entity, world, source) in (&entities, &mut worlds, &mut sources).join() {
             let limits = source.limits();
             world.limits = source.limits();
 
@@ -330,10 +331,16 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                     VoxelSourceResult::Ok(chunk) => {
                                         let entity = entities.create();
                                         let mut mesh = DynamicVoxelMesh::new(chunk);
-                                        mesh.origin.x = coord[0] as f32 * world.scale;
-                                        mesh.origin.y = coord[1] as f32 * world.scale;
-                                        mesh.origin.z = coord[2] as f32 * world.scale;
+                                        let mut transform = Transform::default();
+                                        transform.set_translation(vec3(
+                                            coord[0] as f32 * world.scale,
+                                            coord[1] as f32 * world.scale,
+                                            coord[2] as f32 * world.scale,
+                                        ));
+                                        mesh.scale = world.scale;
+                                        mesh.parent = Some((world_entity, [x, y, z]));
                                         meshes.insert(entity, mesh).ok();
+                                        transforms.insert(entity, transform).ok();
                                         Chunk::Ready(entity)
                                     }
                                     VoxelSourceResult::Loading(job) => {
@@ -355,7 +362,6 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                             }
                             Chunk::NotReady(request) => {
                                 let coord = [x + origin[0], y + origin[1], z + origin[2]];
-                                
                                 limit_visibility(
                                     &mut world.visibility,
                                     center,
@@ -371,10 +377,16 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                     Some(chunk) => {
                                         let entity = entities.create();
                                         let mut mesh = DynamicVoxelMesh::new(chunk);
-                                        mesh.origin.x = coord[0] as f32 * world.scale;
-                                        mesh.origin.y = coord[1] as f32 * world.scale;
-                                        mesh.origin.z = coord[2] as f32 * world.scale;
+                                        let mut transform = Transform::default();
+                                        transform.set_translation(vec3(
+                                            coord[0] as f32 * world.scale,
+                                            coord[1] as f32 * world.scale,
+                                            coord[2] as f32 * world.scale,
+                                        ));
+                                        mesh.scale = world.scale;
+                                        mesh.parent = Some((world_entity, [x, y, z]));
                                         meshes.insert(entity, mesh).ok();
+                                        transforms.insert(entity, transform).ok();
                                         Chunk::Ready(entity)
                                     }
                                     None => Chunk::NotReady(request),
@@ -388,7 +400,10 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                             Chunk::NotReady(_future) => { /* this is a problem */ }
                             Chunk::Ready(entity) => {
                                 let coord = [x + origin[0], y + origin[1], z + origin[2]];
-                                let voxel = replace(meshes.get_mut(entity).unwrap().deref_mut(), Voxel::Placeholder);
+                                let voxel = replace(
+                                    meshes.get_mut(entity).unwrap().deref_mut(),
+                                    Voxel::Placeholder,
+                                );
                                 entities.delete(entity).expect("Remove chunk entity failed");
                                 let job = source.drop_voxel(&mut source_data, coord, voxel);
                                 self.pool.spawn(move || job());

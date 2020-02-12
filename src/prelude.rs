@@ -4,13 +4,13 @@ pub use crate::{
         ColoredMaterial, TexturedMaterial, Tiling, VoxelMaterial, VoxelMaterialId,
         VoxelMaterialStorage,
     },
+    mesh::{DynamicVoxelMesh, VoxelMesh},
     model::{Model, ModelSource},
     raycast::{Raycast, RaycastBase},
     vox::VoxFormat,
     voxel::{Data, Voxel},
     world::{Limits, VoxelSource, VoxelSourceResult, VoxelWorld, VoxelWorldAccess},
-    mesh::{VoxelMesh, DynamicVoxelMesh},
 };
 
-pub type RenderVoxelPbr<V> =
-    crate::plugin::RenderVoxel<crate::pass::VoxelPassDef<amethyst::renderer::pass::PbrPassDef>, V>;
+pub type RenderVoxelPbr =
+    crate::plugin::RenderVoxel<crate::pass::VoxelPassDef<amethyst::renderer::pass::PbrPassDef>>;

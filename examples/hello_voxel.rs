@@ -89,6 +89,7 @@ impl SimpleState for Example {
                 return Trans::Quit;
             } else if is_mouse_button_down(&event, MouseButton::Left) {
                 let mut store = state.world.write_storage::<VoxelWorld<ExampleVoxel>>();
+                let mut chunks = state.world.write_storage::<DynamicVoxelMesh<ExampleVoxel>>();
                 let screen = state.world.read_resource::<ScreenDimensions>();
                 let active_camera = state.world.read_resource::<ActiveCamera>();
                 let cameras = state.world.read_storage::<Camera>();
@@ -120,7 +121,7 @@ impl SimpleState for Example {
 
                 //println!("position: {},{},{}", origin.x, origin.y, origin.z);
 
-                let voxels = store.get_mut(self.voxels.unwrap()).unwrap();
+                let voxels = VoxelWorldAccess::new(store.get_mut(self.voxels.unwrap()).unwrap(), &mut chunks);
 
                 let ray = voxels.ray(origin, direction);
                 if let Some(hit) = voxels.hit(&ray) {
@@ -166,8 +167,8 @@ fn main() -> amethyst::Result<()> {
             InputBundle::<StringBindings>::new().with_bindings_from_file(&key_bindings_path)?,
         )?
         .with_bundle(
-            VoxelBundle::new()
-                .with_voxel::<ExampleVoxel>()
+            VoxelBundle::new(4)
+                .with_voxel::<DefaultBackend, ExampleVoxel>()
                 .with_source::<ExampleVoxel, ModelSource>(),
         )?
         .with_bundle(
@@ -176,7 +177,7 @@ fn main() -> amethyst::Result<()> {
                     RenderToWindow::from_config_path(display_config_path)
                         .with_clear([0.0, 0.0, 0.0, 1.0]),
                 )
-                .with_plugin(RenderVoxelPbr::<ExampleVoxel>::default())
+                .with_plugin(RenderVoxelPbr::default())
                 .with_plugin(RenderSkybox::with_colors(
                     Srgb::new(0.82, 0.51, 0.50),
                     Srgb::new(0.18, 0.11, 0.85),

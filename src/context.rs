@@ -1,9 +1,9 @@
+use crate::mesh::DynamicVoxelMesh;
 use crate::triangulate::Triangulate;
 use crate::voxel::{Data, Voxel};
 use crate::world::VoxelWorld;
-use crate::mesh::DynamicVoxelMesh;
 
-use amethyst::ecs::ReadStorage;
+use amethyst::core::ecs::storage::GenericReadStorage;
 
 /// Trait for retrieving neighbour information between separate root voxels.
 pub trait Context<T: Data> {
@@ -30,10 +30,10 @@ pub struct DetailContext<'a, T: Data> {
 }
 
 /// Context sampling the chunks of a world.
-pub struct WorldContext<'a, V: Data> {
+pub struct WorldContext<'a, V: Data, S: 'a + GenericReadStorage<Component = DynamicVoxelMesh<V>>> {
     coord: [isize; 3],
     world: &'a VoxelWorld<V>,
-    chunks: &'a ReadStorage<'a, DynamicVoxelMesh<V>>,
+    chunks: &'a S,
 }
 
 impl<'a, T: Data> VoxelContext<'a, T> {
@@ -131,9 +131,17 @@ impl<'a, T: Data> Context<T> for DetailContext<'a, T> {
     }
 }
 
-impl<'a, V: Data> WorldContext<'a, V> {
-    pub fn new(coord: [isize; 3], world: &'a VoxelWorld<V>, chunks: &'a ReadStorage<'a, DynamicVoxelMesh<V>>) -> Self {
-        Self { coord, world, chunks }
+impl<'a, V, S> WorldContext<'a, V, S>
+where
+    V: Data,
+    S: 'a + GenericReadStorage<Component = DynamicVoxelMesh<V>>,
+{
+    pub fn new(coord: [isize; 3], world: &'a VoxelWorld<V>, chunks: &'a S) -> Self {
+        Self {
+            coord,
+            world,
+            chunks,
+        }
     }
 
     fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a Voxel<V>> {
@@ -150,7 +158,10 @@ impl<'a, V: Data> WorldContext<'a, V> {
             let index = coord[0] as usize
                 + coord[1] as usize * self.world.dims[0]
                 + coord[2] as usize * self.world.dims[0] * self.world.dims[1];
-            if let Some(voxel) = self.world.data[index].get().and_then(|e| self.chunks.get(e)) {
+            if let Some(voxel) = self.world.data[index]
+                .get()
+                .and_then(|e| self.chunks.get(e))
+            {
                 let grid_mod = |x: isize| if x%size >= 0 { x%size } else { x%size + size } as usize;
                 voxel.get(
                     grid_mod(x) * Voxel::<V>::DX
@@ -166,7 +177,11 @@ impl<'a, V: Data> WorldContext<'a, V> {
     }
 }
 
-impl<'a, V: Data> Context<V> for WorldContext<'a, V> {
+impl<'a, V, S> Context<V> for WorldContext<'a, V, S>
+where
+    V: Data,
+    S: 'a + GenericReadStorage<Component = DynamicVoxelMesh<V>>,
+{
     fn visible(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|c| c.visible()).unwrap_or(false)
     }

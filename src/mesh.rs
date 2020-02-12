@@ -16,6 +16,7 @@ use crate::material::*;
 use crate::model::*;
 use crate::pass::*;
 use crate::voxel::{Data, Voxel};
+use crate::world::VoxelWorld;
 
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -29,17 +30,22 @@ pub struct VoxelMesh {
 pub struct DynamicVoxelMesh<T: Data> {
     pub(crate) data: Voxel<T>,
     pub(crate) origin: Vec3,
-    pub(crate) parent: Option<Entity>,
+    pub(crate) scale: f32,
+    pub(crate) parent: Option<(Entity, [isize; 3])>,
     pub(crate) dirty: bool,
 }
 
-pub struct VoxelMeshProcessorSystem<B: Backend, V: Data + Default>(PhantomData<(B, V)>);
+pub struct VoxelMeshProcessorSystem<B: Backend, V: Data + Default> {
+    triangulation_limit: usize,
+    marker: PhantomData<(B, V)>,
+}
 
 #[derive(SystemData)]
 pub struct VoxelMeshProcessorSystemData<'a, B: Backend, V: Data> {
     mesh_storage: Write<'a, AssetStorage<VoxelMesh>>,
     dynamic_mesh_storage: WriteStorage<'a, DynamicVoxelMesh<V>>,
     handle_storage: WriteStorage<'a, Handle<VoxelMesh>>,
+    world_storage: ReadStorage<'a, VoxelWorld<V>>,
     entities: Entities<'a>,
     queue_id: ReadExpect<'a, QueueId>,
     time: Read<'a, Time>,
@@ -65,6 +71,7 @@ impl<T: Data> DynamicVoxelMesh<T> {
         DynamicVoxelMesh {
             data: value,
             origin: vec3(0.0, 0.0, 0.0),
+            scale: Voxel::<T>::WIDTH as f32,
             parent: None,
             dirty: true,
         }
@@ -78,6 +85,7 @@ impl<T: Data> DynamicVoxelMesh<T> {
         DynamicVoxelMesh {
             data: Voxel::from_iter(data, iter),
             origin: vec3(0.0, 0.0, 0.0),
+            scale: Voxel::<T>::WIDTH as f32,
             parent: None,
             dirty: true,
         }
@@ -100,110 +108,119 @@ impl<T: Data> DerefMut for DynamicVoxelMesh<T> {
 }
 
 impl<B: Backend, V: Data + Default> VoxelMeshProcessorSystem<B, V> {
-    pub fn new() -> Self {
-        VoxelMeshProcessorSystem(PhantomData)
+    pub fn new(triangulation_limit: usize) -> Self {
+        VoxelMeshProcessorSystem {
+            triangulation_limit,
+            marker: PhantomData,
+        }
     }
 }
 
 impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessorSystem<B, V> {
     type SystemData = VoxelMeshProcessorSystemData<'a, B, V>;
 
-    fn run(&mut self, data: Self::SystemData) {
-        let VoxelMeshProcessorSystemData {
-            mut mesh_storage,
-            mut dynamic_mesh_storage,
-            mut handle_storage,
-            entities,
-            queue_id,
-            time,
-            pool,
-            strategy,
-            factory,
-            mut material_storage,
-        } = data;
-
-        let new_meshes = (&entities, &mut dynamic_mesh_storage)
-            .par_join()
+    fn run(&mut self, mut data: Self::SystemData) {
+        let dirty_meshes = (&data.entities, &mut data.dynamic_mesh_storage)
+            .join()
             .filter_map(|(e, dynamic_mesh)| {
                 if dynamic_mesh.dirty {
-                    println!(
-                        "Triangulating mesh at {},{},{}",
-                        dynamic_mesh.origin.x, dynamic_mesh.origin.y, dynamic_mesh.origin.z
-                    );
-
-                    // triangulate the mesh
-                    let voxel_mesh = VoxelMesh {
-                        inner: build_mesh(
-                            &dynamic_mesh.data,
-                            VoxelContext::new(&dynamic_mesh.data),
-                            dynamic_mesh.origin.clone(),
-                            (Voxel::<V>::WIDTH) as f32,
-                            &material_storage,
-                            *queue_id,
-                            &factory,
-                        ),
-                    };
-
-                    // clear the dirty flag
                     dynamic_mesh.dirty = false;
-
-                    Some((e, voxel_mesh))
+                    Some(e)
                 } else {
                     None
                 }
             })
+            .take(self.triangulation_limit)
             .collect::<Vec<_>>();
 
-        for (e, voxel_mesh) in new_meshes {
+        for dirty in dirty_meshes {
+            let dynamic_mesh = data.dynamic_mesh_storage.get(dirty).unwrap();
+            // triangulate the mesh
+            let mesh = dynamic_mesh
+                .parent
+                .map(|(world, coord)| {
+                    let world = data
+                        .world_storage
+                        .get(world)
+                        .expect("DynamicVoxelMesh parent invalid");
+                    build_mesh(
+                        &dynamic_mesh.data,
+                        WorldContext::new(coord, world, &data.dynamic_mesh_storage),
+                        dynamic_mesh.origin.clone(),
+                        dynamic_mesh.scale,
+                        &data.material_storage,
+                        *data.queue_id,
+                        &data.factory,
+                    )
+                })
+                .unwrap_or_else(|| {
+                    build_mesh(
+                        &dynamic_mesh.data,
+                        VoxelContext::new(&dynamic_mesh.data),
+                        dynamic_mesh.origin.clone(),
+                        dynamic_mesh.scale,
+                        &data.material_storage,
+                        *data.queue_id,
+                        &data.factory,
+                    )
+                });
+
             // create a mesh handle for the voxelmesh we just created.
             // the handle is picked up by the rendering system.
-            let handle = mesh_storage.insert(voxel_mesh);
+            let handle = data.mesh_storage.insert(VoxelMesh { inner: mesh });
 
             // add the handle to the entity
-            handle_storage.insert(e, handle.clone()).ok();
+            data.handle_storage.insert(dirty, handle.clone()).ok();
         }
 
-        mesh_storage.process(
-            |b| {
-                let materials: Vec<_> = b
-                    .materials
-                    .iter()
-                    .map(|m| material_storage.create(m.clone()))
-                    .collect();
+        data.mesh_storage.process(
+            {
+                let material_storage = &mut data.material_storage;
+                let queue_id = &data.queue_id;
+                let factory = &data.factory;
+                move |b| {
+                    let materials: Vec<_> = b
+                        .materials
+                        .iter()
+                        .map(|m| material_storage.create(m.clone()))
+                        .collect();
 
-                let mut voxel =
-                    Voxel::<V>::from_iter(Default::default(), std::iter::repeat(Voxel::default()));
+                    let mut voxel = Voxel::<V>::from_iter(
+                        Default::default(),
+                        std::iter::repeat(Voxel::default()),
+                    );
 
-                for (index, material) in b.voxels {
-                    let x = index % b.dimensions[0];
-                    let y = (index / (b.dimensions[0] * b.dimensions[1])) % b.dimensions[2];
-                    let z = (index / b.dimensions[0]) % b.dimensions[1];
+                    for (index, material) in b.voxels {
+                        let x = index % b.dimensions[0];
+                        let y = (index / (b.dimensions[0] * b.dimensions[1])) % b.dimensions[2];
+                        let z = (index / b.dimensions[0]) % b.dimensions[1];
 
-                    if x < Voxel::<V>::WIDTH && y < Voxel::<V>::WIDTH && z < Voxel::<V>::WIDTH {
-                        if let Some(sub) = voxel.get_mut(Voxel::<V>::coord_to_index(x, y, z)) {
-                            std::mem::replace(
-                                sub,
-                                Voxel::filled(Default::default(), materials[material]),
-                            );
+                        if x < Voxel::<V>::WIDTH && y < Voxel::<V>::WIDTH && z < Voxel::<V>::WIDTH {
+                            if let Some(sub) = voxel.get_mut(Voxel::<V>::coord_to_index(x, y, z)) {
+                                std::mem::replace(
+                                    sub,
+                                    Voxel::filled(Default::default(), materials[material]),
+                                );
+                            }
                         }
                     }
-                }
 
-                Ok(ProcessingState::Loaded(VoxelMesh {
-                    inner: build_mesh(
-                        &voxel,
-                        VoxelContext::new(&voxel),
-                        vec3(0.0, 0.0, 0.0),
-                        32.0,
-                        &material_storage,
-                        *queue_id,
-                        &factory,
-                    ),
-                }))
+                    Ok(ProcessingState::Loaded(VoxelMesh {
+                        inner: build_mesh(
+                            &voxel,
+                            VoxelContext::new(&voxel),
+                            vec3(0.0, 0.0, 0.0),
+                            Voxel::<V>::WIDTH as f32,
+                            material_storage,
+                            **queue_id,
+                            factory,
+                        ),
+                    }))
+                }
             },
-            time.frame_number(),
-            &**pool,
-            strategy.as_ref().map(Deref::deref),
+            data.time.frame_number(),
+            &**data.pool,
+            data.strategy.as_ref().map(Deref::deref),
         );
     }
 }

@@ -1,9 +1,10 @@
-use crate::{voxel::Data, world::VoxelSource, world::VoxelWorld};
+use crate::{voxel::Data, world::VoxelSource, world::VoxelWorld, mesh::VoxelMeshProcessorSystem};
 use amethyst::{
     core::bundle::SystemBundle,
     ecs::prelude::{Component, DispatcherBuilder, WorldExt},
     error::Error,
     prelude::World,
+    renderer::Backend,
 };
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::sync::Arc;
@@ -14,13 +15,15 @@ type SystemRegistrator = dyn for<'a, 'b> FnOnce(&mut World, &mut DispatcherBuild
 /// Before any `Voxel<T>` type will work,
 ///  you have to specify which `Data` and `Source` implementations you plan to use.
 pub struct VoxelBundle {
+    triangulation_limit: usize,
     systems: Vec<Box<SystemRegistrator>>,
     pool: Arc<ThreadPool>,
 }
 
 impl VoxelBundle {
-    pub fn new() -> Self {
+    pub fn new(triangulation_limit: usize) -> Self {
         VoxelBundle {
+            triangulation_limit,
             systems: Vec::new(),
             pool: Arc::new(
                 ThreadPoolBuilder::new()
@@ -49,9 +52,17 @@ impl VoxelBundle {
     }
 
     /// Configure systems that work with `Data` `V`.
-    pub fn with_voxel<V: Data>(mut self) -> Self {
-        self.systems.push(Box::new(|world, _builder| {
-            world.register::<VoxelWorld<V>>();
+    pub fn with_voxel<B: Backend, V: Data + Default>(mut self) -> Self {
+        self.systems.push(Box::new({
+            let triangulation_limit = self.triangulation_limit;
+            move |world, builder| {
+                world.register::<VoxelWorld<V>>();
+                builder.add(
+                    VoxelMeshProcessorSystem::<B, V>::new(triangulation_limit),
+                    "voxel_mesh_processor",
+                    &[],
+                );
+            }
         }));
         self
     }
