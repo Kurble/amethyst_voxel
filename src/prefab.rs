@@ -1,33 +1,35 @@
 use amethyst::ecs::*;
-use amethyst::assets::{Format, Handle, PrefabData, ProgressCounter, Loader, AssetStorage, Progress};
+use amethyst::assets::{Handle, PrefabData, ProgressCounter, Loader, AssetStorage, Progress};
 use amethyst::error::*;
 use serde::Deserialize;
-use std::marker::PhantomData;
 
+use crate::vox::VoxFormat;
 use crate::voxel::{Voxel, Data};
 use crate::mesh::{DynamicVoxelMesh, VoxelMesh};
-use crate::model::ModelData;
 
 #[derive(Clone, Deserialize)]
-pub enum VoxelMeshPrefab<V: Data, F: Format<ModelData>> {
-    File(String, F),
+pub enum VoxelMeshPrefab {
+    File(String),
 
     #[serde(skip)]
     Handle(Handle<VoxelMesh>),
 
     #[serde(skip)]
-    Marker(PhantomData<V>),
+    Placeholder,
 }
 
 #[derive(Deserialize)]
-pub enum DynamicVoxelMeshPrefab<V: Data, F: Format<ModelData>> {
-    File(String, F),
+pub enum DynamicVoxelMeshPrefab<V: Data> {
+    File(String),
 
     #[serde(skip)]
     Handle(Handle<Voxel<V>>),
+
+    #[serde(skip)]
+    Placeholder,
 }
 
-impl<'a, V: Data, F: Format<ModelData>> PrefabData<'a> for VoxelMeshPrefab<V, F> {
+impl<'a> PrefabData<'a> for VoxelMeshPrefab {
     type SystemData = (ReadExpect<'a, Loader>, Read<'a, AssetStorage<VoxelMesh>>, WriteStorage<'a, Handle<VoxelMesh>>);
     type Result = ();
 
@@ -42,7 +44,6 @@ impl<'a, V: Data, F: Format<ModelData>> PrefabData<'a> for VoxelMeshPrefab<V, F>
             VoxelMeshPrefab::Handle(handle) => {
                 handles.insert(entity, handle.clone())?;
             }
-
             _ => unreachable!(),
         }
         Ok(())
@@ -53,15 +54,50 @@ impl<'a, V: Data, F: Format<ModelData>> PrefabData<'a> for VoxelMeshPrefab<V, F>
         mut progress: &mut ProgressCounter,
         (loader, storage, _): &mut Self::SystemData,
     ) -> Result<bool, Error> {        
-        match std::mem::replace(self, VoxelMeshPrefab::Marker(PhantomData)) {
-            VoxelMeshPrefab::File(file, format) => {
-                
+        match std::mem::replace(self, VoxelMeshPrefab::Placeholder) {
+            VoxelMeshPrefab::File(file) => {
                 progress.add_assets(1);
-                *self = VoxelMeshPrefab::Handle(loader.load(file, format, progress, storage));
-
+                *self = VoxelMeshPrefab::Handle(loader.load(file, VoxFormat, progress, storage));
                 Ok(true)
             }
+            _ => Ok(false),
+        }
+    }
+}
 
+impl<'a, V: Data> PrefabData<'a> for DynamicVoxelMeshPrefab<V> {
+    type SystemData = (ReadExpect<'a, Loader>, Read<'a, AssetStorage<Voxel<V>>>, WriteStorage<'a, DynamicVoxelMesh<V>>);
+    type Result = ();
+
+    fn add_to_entity(
+        &self,
+        entity: Entity,
+        (_, storage, components): &mut Self::SystemData,
+        _: &[Entity],
+        _: &[Entity],
+    ) -> Result<Self::Result, Error> {
+        match self {
+            DynamicVoxelMeshPrefab::Handle(handle) => {
+                let voxel = storage.get(handle).expect("Voxel not loaded");
+                let component = DynamicVoxelMesh::new(voxel.clone());
+                components.insert(entity, component)?;
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
+    fn load_sub_assets(
+        &mut self,
+        mut progress: &mut ProgressCounter,
+        (loader, storage, _): &mut Self::SystemData,
+    ) -> Result<bool, Error> {
+        match std::mem::replace(self, DynamicVoxelMeshPrefab::Placeholder) {
+            DynamicVoxelMeshPrefab::File(file) => {
+                progress.add_assets(1);
+                *self = DynamicVoxelMeshPrefab::Handle(loader.load(file, VoxFormat, progress, storage));
+                Ok(true)
+            }
             _ => Ok(false),
         }
     }

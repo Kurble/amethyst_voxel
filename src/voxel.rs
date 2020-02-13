@@ -5,9 +5,8 @@ use std::sync::Arc;
 use crate::material::VoxelMaterialId;
 use crate::model::ModelData;
 
-use amethyst::assets::{Handle, Asset, ProcessingState, ProcessableAsset};
+use amethyst::assets::{Handle, Asset};
 use amethyst::ecs::*;
-use amethyst::error::*;
 
 /// Trait for user data associated with voxels.
 pub trait Data: 'static + Clone + Send + Sync {

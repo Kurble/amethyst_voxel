@@ -6,6 +6,7 @@ pub use crate::{
     },
     mesh::{DynamicVoxelMesh, VoxelMesh},
     model::{Model, ModelSource},
+    prefab::{DynamicVoxelMeshPrefab, VoxelMeshPrefab},
     raycast::{Raycast, RaycastBase},
     vox::VoxFormat,
     voxel::{Data, Voxel},

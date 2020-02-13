@@ -1,4 +1,4 @@
-use crate::{voxel::Data, world::VoxelSource, world::VoxelWorld, mesh::VoxelMeshProcessorSystem};
+use crate::{mesh::*, voxel::Data, world::VoxelSource, world::VoxelWorld};
 use amethyst::{
     core::bundle::SystemBundle,
     ecs::prelude::{Component, DispatcherBuilder, WorldExt},
@@ -57,11 +57,12 @@ impl VoxelBundle {
             let triangulation_limit = self.triangulation_limit;
             move |world, builder| {
                 world.register::<VoxelWorld<V>>();
-                builder.add(
-                    VoxelMeshProcessorSystem::<B, V>::new(triangulation_limit),
-                    "voxel_mesh_processor",
-                    &[],
-                );
+
+                let triangulator = TriangulatorSystem::<B, V>::new(triangulation_limit);
+                builder.add(triangulator, "triangulator", &[]);
+
+                let processor = VoxelMeshProcessor::<B, V>::new();
+                builder.add(processor, "voxel_mesh_processor", &[]);
             }
         }));
         self

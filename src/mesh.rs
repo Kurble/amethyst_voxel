@@ -35,18 +35,31 @@ pub struct DynamicVoxelMesh<T: Data> {
     pub(crate) dirty: bool,
 }
 
-pub struct VoxelMeshProcessorSystem<B: Backend, V: Data + Default> {
+pub struct TriangulatorSystem<B: Backend, V: Data + Default> {
     triangulation_limit: usize,
     marker: PhantomData<(B, V)>,
 }
 
+pub struct VoxelMeshProcessor<B: Backend, V: Data + Default> {
+    marker: PhantomData<(B, V)>,
+}
+
 #[derive(SystemData)]
-pub struct VoxelMeshProcessorSystemData<'a, B: Backend, V: Data> {
+pub struct TriangulatorSystemData<'a, B: Backend, V: Data> {
     mesh_storage: Write<'a, AssetStorage<VoxelMesh>>,
     dynamic_mesh_storage: WriteStorage<'a, DynamicVoxelMesh<V>>,
     handle_storage: WriteStorage<'a, Handle<VoxelMesh>>,
     world_storage: ReadStorage<'a, VoxelWorld<V>>,
     entities: Entities<'a>,
+    queue_id: ReadExpect<'a, QueueId>,
+    factory: ReadExpect<'a, Factory<B>>,
+    material_storage: WriteExpect<'a, VoxelMaterialStorage>,
+}
+
+#[derive(SystemData)]
+pub struct VoxelMeshProcessorData<'a, B: Backend, V: Data> {
+    mesh_storage: Write<'a, AssetStorage<VoxelMesh>>,
+    voxel_storage: Write<'a, AssetStorage<Voxel<V>>>,
     queue_id: ReadExpect<'a, QueueId>,
     time: Read<'a, Time>,
     pool: ReadExpect<'a, ArcThreadPool>,
@@ -107,17 +120,17 @@ impl<T: Data> DerefMut for DynamicVoxelMesh<T> {
     }
 }
 
-impl<B: Backend, V: Data + Default> VoxelMeshProcessorSystem<B, V> {
+impl<B: Backend, V: Data + Default> TriangulatorSystem<B, V> {
     pub fn new(triangulation_limit: usize) -> Self {
-        VoxelMeshProcessorSystem {
+        TriangulatorSystem {
             triangulation_limit,
             marker: PhantomData,
         }
     }
 }
 
-impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessorSystem<B, V> {
-    type SystemData = VoxelMeshProcessorSystemData<'a, B, V>;
+impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> {
+    type SystemData = TriangulatorSystemData<'a, B, V>;
 
     fn run(&mut self, mut data: Self::SystemData) {
         let dirty_meshes = (&data.entities, &mut data.dynamic_mesh_storage)
@@ -172,45 +185,47 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessorSystem<
             // add the handle to the entity
             data.handle_storage.insert(dirty, handle.clone()).ok();
         }
+    }
+}
+
+impl<B: Backend, V: Data + Default> VoxelMeshProcessor<B, V> {
+    pub fn new() -> Self {
+        VoxelMeshProcessor {
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessor<B, V> {
+    type SystemData = VoxelMeshProcessorData<'a, B, V>;
+
+    fn run(&mut self, mut data: Self::SystemData) {
+        data.voxel_storage.process(
+            {
+                let material_storage = &mut data.material_storage;
+                move |model| {
+                    let voxel = build_voxel::<V>(model, material_storage);
+                    Ok(ProcessingState::Loaded(voxel))
+                }
+            },
+            data.time.frame_number(),
+            &**data.pool,
+            data.strategy.as_ref().map(Deref::deref),
+        );
 
         data.mesh_storage.process(
             {
                 let material_storage = &mut data.material_storage;
                 let queue_id = &data.queue_id;
                 let factory = &data.factory;
-                move |b| {
-                    let materials: Vec<_> = b
-                        .materials
-                        .iter()
-                        .map(|m| material_storage.create(m.clone()))
-                        .collect();
-
-                    let mut voxel = Voxel::<V>::from_iter(
-                        Default::default(),
-                        std::iter::repeat(Voxel::default()),
-                    );
-
-                    for (index, material) in b.voxels {
-                        let x = index % b.dimensions[0];
-                        let y = (index / (b.dimensions[0] * b.dimensions[1])) % b.dimensions[2];
-                        let z = (index / b.dimensions[0]) % b.dimensions[1];
-
-                        if x < Voxel::<V>::WIDTH && y < Voxel::<V>::WIDTH && z < Voxel::<V>::WIDTH {
-                            if let Some(sub) = voxel.get_mut(Voxel::<V>::coord_to_index(x, y, z)) {
-                                std::mem::replace(
-                                    sub,
-                                    Voxel::filled(Default::default(), materials[material]),
-                                );
-                            }
-                        }
-                    }
-
+                move |model| {
+                    let voxel = build_voxel::<V>(model, material_storage);
                     Ok(ProcessingState::Loaded(VoxelMesh {
                         inner: build_mesh(
                             &voxel,
                             VoxelContext::new(&voxel),
                             vec3(0.0, 0.0, 0.0),
-                            Voxel::<V>::WIDTH as f32,
+                            1.0,
                             material_storage,
                             **queue_id,
                             factory,
@@ -223,6 +238,33 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessorSystem<
             data.strategy.as_ref().map(Deref::deref),
         );
     }
+}
+
+fn build_voxel<V>(model: ModelData, material_storage: &mut VoxelMaterialStorage) -> Voxel<V>
+where
+    V: Data + Default,
+{
+    let materials: Vec<_> = model
+        .materials
+        .iter()
+        .map(|m| material_storage.create(m.clone()))
+        .collect();
+
+    let mut voxel = Voxel::<V>::from_iter(Default::default(), std::iter::repeat(Voxel::default()));
+
+    for (index, material) in model.voxels {
+        let x = index % model.dimensions[0];
+        let y = (index / (model.dimensions[0] * model.dimensions[1])) % model.dimensions[2];
+        let z = (index / model.dimensions[0]) % model.dimensions[1];
+
+        if x < Voxel::<V>::WIDTH && y < Voxel::<V>::WIDTH && z < Voxel::<V>::WIDTH {
+            if let Some(sub) = voxel.get_mut(Voxel::<V>::coord_to_index(x, y, z)) {
+                std::mem::replace(sub, Voxel::filled(Default::default(), materials[material]));
+            }
+        }
+    }
+
+    voxel
 }
 
 fn build_mesh<B, V, C>(
