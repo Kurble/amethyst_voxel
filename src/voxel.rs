@@ -2,11 +2,7 @@ use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use crate::material::VoxelMaterialId;
-use crate::model::ModelData;
-
-use amethyst::assets::{Handle, Asset};
-use amethyst::ecs::*;
+use crate::material::AtlasMaterialHandle;
 
 /// Trait for user data associated with voxels.
 pub trait Data: 'static + Clone + Send + Sync {
@@ -50,7 +46,7 @@ pub enum Voxel<T: Data> {
     /// A completely solid voxel with a single material (color + specular)
     Material {
         /// The material id
-        material: VoxelMaterialId,
+        material: AtlasMaterialHandle,
 
         /// User data for the voxel.
         data: T,
@@ -100,7 +96,7 @@ impl<T: Data> Voxel<T> {
     }
 
     /// Construct a Voxel::Material voxel. The voxel will be filled with one single material.
-    pub fn filled(data: T, material: VoxelMaterialId) -> Self {
+    pub fn filled(data: T, material: AtlasMaterialHandle) -> Self {
         Voxel::Material { data, material }
     }
 
@@ -125,8 +121,8 @@ impl<T: Data> Voxel<T> {
     }
 }
 
-impl<T: Data + Default> From<VoxelMaterialId> for Voxel<T> {
-    fn from(material: VoxelMaterialId) -> Voxel<T> {
+impl<T: Data + Default> From<AtlasMaterialHandle> for Voxel<T> {
+    fn from(material: AtlasMaterialHandle) -> Voxel<T> {
         Voxel::Material {
             data: Default::default(),
             material,
@@ -161,13 +157,7 @@ impl<T: Data> DerefMut for Voxel<T> {
             Voxel::Empty { ref mut data, .. }
             | Voxel::Detail { ref mut data, .. }
             | Voxel::Material { ref mut data, .. } => data,
-            Voxel::Placeholder => panic!("Placeholder dereferenced")
+            Voxel::Placeholder => panic!("Placeholder dereferenced"),
         }
     }
-}
-
-impl<T: Data> Asset for Voxel<T> {
-    const NAME: &'static str = "Voxel";
-    type Data = ModelData;
-    type HandleStorage = DenseVecStorage<Handle<Self>>;
 }

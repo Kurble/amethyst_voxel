@@ -1,11 +1,10 @@
 pub use crate::{
     bundle::VoxelBundle,
     material::{
-        ColoredMaterial, TexturedMaterial, Tiling, VoxelMaterial, VoxelMaterialId,
-        VoxelMaterialStorage,
+        Atlas, AtlasData, AtlasMaterialHandle, ColoredMaterial, TexturedMaterial, Tiling,
+        VoxelMaterial,
     },
     mesh::{DynamicVoxelMesh, VoxelMesh},
-    model::{Model, ModelSource},
     prefab::{DynamicVoxelMeshPrefab, VoxelMeshPrefab},
     raycast::{Raycast, RaycastBase},
     vox::VoxFormat,

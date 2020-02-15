@@ -18,21 +18,29 @@ use crate::pass::*;
 use crate::voxel::{Data, Voxel};
 use crate::world::VoxelWorld;
 
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 /// Asset for voxelmesh rendering
 pub struct VoxelMesh {
     pub(crate) inner: Option<Mesh>,
+    pub(crate) atlas: Handle<Atlas>,
 }
 
 /// A component that manages a dynamic voxelmesh
 pub struct DynamicVoxelMesh<T: Data> {
     pub(crate) data: Voxel<T>,
+    pub(crate) atlas: Handle<Atlas>,
     pub(crate) origin: Vec3,
     pub(crate) scale: f32,
     pub(crate) parent: Option<(Entity, [isize; 3])>,
     pub(crate) dirty: bool,
+}
+
+pub struct DynamicVoxelMeshData<T: Data> {
+    pub data: Voxel<T>,
+    pub atlas: Handle<Atlas>,
 }
 
 pub struct TriangulatorSystem<B: Backend, V: Data + Default> {
@@ -49,27 +57,35 @@ pub struct TriangulatorSystemData<'a, B: Backend, V: Data> {
     mesh_storage: Write<'a, AssetStorage<VoxelMesh>>,
     dynamic_mesh_storage: WriteStorage<'a, DynamicVoxelMesh<V>>,
     handle_storage: WriteStorage<'a, Handle<VoxelMesh>>,
+    atlas_handle_storage: ReadStorage<'a, Handle<Atlas>>,
     world_storage: ReadStorage<'a, VoxelWorld<V>>,
     entities: Entities<'a>,
     queue_id: ReadExpect<'a, QueueId>,
     factory: ReadExpect<'a, Factory<B>>,
-    material_storage: WriteExpect<'a, VoxelMaterialStorage>,
+    atlas_storage: Read<'a, AssetStorage<Atlas>>,
 }
 
 #[derive(SystemData)]
 pub struct VoxelMeshProcessorData<'a, B: Backend, V: Data> {
     mesh_storage: Write<'a, AssetStorage<VoxelMesh>>,
-    voxel_storage: Write<'a, AssetStorage<Voxel<V>>>,
+    voxel_storage: Write<'a, AssetStorage<DynamicVoxelMeshData<V>>>,
+    atlas_storage: Read<'a, AssetStorage<Atlas>>,
+    loader: ReadExpect<'a, Loader>,
     queue_id: ReadExpect<'a, QueueId>,
     time: Read<'a, Time>,
     pool: ReadExpect<'a, ArcThreadPool>,
     strategy: Option<Read<'a, HotReloadStrategy>>,
     factory: ReadExpect<'a, Factory<B>>,
-    material_storage: WriteExpect<'a, VoxelMaterialStorage>,
 }
 
 impl Asset for VoxelMesh {
     const NAME: &'static str = "VoxelMesh";
+    type Data = ModelData;
+    type HandleStorage = DenseVecStorage<Handle<Self>>;
+}
+
+impl<T: Data> Asset for DynamicVoxelMeshData<T> {
+    const NAME: &'static str = "DynamicVoxelMesh";
     type Data = ModelData;
     type HandleStorage = DenseVecStorage<Handle<Self>>;
 }
@@ -80,9 +96,10 @@ impl<T: Data> Component for DynamicVoxelMesh<T> {
 
 impl<T: Data> DynamicVoxelMesh<T> {
     /// Create a new `DynamicVoxelMesh` component.
-    pub fn new(value: Voxel<T>) -> Self {
+    pub fn new(value: Voxel<T>, atlas: Handle<Atlas>) -> Self {
         DynamicVoxelMesh {
             data: value,
+            atlas,
             origin: vec3(0.0, 0.0, 0.0),
             scale: Voxel::<T>::WIDTH as f32,
             parent: None,
@@ -91,12 +108,13 @@ impl<T: Data> DynamicVoxelMesh<T> {
     }
 
     /// Create a new `VoxelRender` component with a new `Voxel<T>` created from an iterator.
-    pub fn from_iter<I>(data: T, iter: I) -> Self
+    pub fn from_iter<I>(data: T, atlas: Handle<Atlas>, iter: I) -> Self
     where
         I: IntoIterator<Item = Voxel<T>>,
     {
         DynamicVoxelMesh {
             data: Voxel::from_iter(data, iter),
+            atlas,
             origin: vec3(0.0, 0.0, 0.0),
             scale: Voxel::<T>::WIDTH as f32,
             parent: None,
@@ -133,14 +151,21 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> 
     type SystemData = TriangulatorSystemData<'a, B, V>;
 
     fn run(&mut self, mut data: Self::SystemData) {
-        let dirty_meshes = (&data.entities, &mut data.dynamic_mesh_storage)
+        let dirty_meshes = (
+            &data.entities,
+            &data.atlas_handle_storage,
+            &mut data.dynamic_mesh_storage,
+        )
             .join()
-            .filter_map(|(e, dynamic_mesh)| {
-                if dynamic_mesh.dirty {
-                    dynamic_mesh.dirty = false;
-                    Some(e)
-                } else {
-                    None
+            .filter_map({
+                let atlas_storage = &data.atlas_storage;
+                move |(e, a, dynamic_mesh)| {
+                    if dynamic_mesh.dirty && atlas_storage.contains(a) {
+                        dynamic_mesh.dirty = false;
+                        Some(e)
+                    } else {
+                        None
+                    }
                 }
             })
             .take(self.triangulation_limit)
@@ -148,6 +173,7 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> 
 
         for dirty in dirty_meshes {
             let dynamic_mesh = data.dynamic_mesh_storage.get(dirty).unwrap();
+            let atlas = data.atlas_storage.get(&dynamic_mesh.atlas).unwrap();
             // triangulate the mesh
             let mesh = dynamic_mesh
                 .parent
@@ -161,7 +187,7 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> 
                         WorldContext::new(coord, world, &data.dynamic_mesh_storage),
                         dynamic_mesh.origin.clone(),
                         dynamic_mesh.scale,
-                        &data.material_storage,
+                        atlas,
                         *data.queue_id,
                         &data.factory,
                     )
@@ -172,7 +198,7 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> 
                         VoxelContext::new(&dynamic_mesh.data),
                         dynamic_mesh.origin.clone(),
                         dynamic_mesh.scale,
-                        &data.material_storage,
+                        atlas,
                         *data.queue_id,
                         &data.factory,
                     )
@@ -180,7 +206,10 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> 
 
             // create a mesh handle for the voxelmesh we just created.
             // the handle is picked up by the rendering system.
-            let handle = data.mesh_storage.insert(VoxelMesh { inner: mesh });
+            let handle = data.mesh_storage.insert(VoxelMesh {
+                inner: mesh,
+                atlas: dynamic_mesh.atlas.clone(),
+            });
 
             // add the handle to the entity
             data.handle_storage.insert(dirty, handle.clone()).ok();
@@ -202,10 +231,16 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessor<B, V> 
     fn run(&mut self, mut data: Self::SystemData) {
         data.voxel_storage.process(
             {
-                let material_storage = &mut data.material_storage;
+                let loader = &data.loader;
+                let atlas_storage = &data.atlas_storage;
                 move |model| {
-                    let voxel = build_voxel::<V>(model, material_storage);
-                    Ok(ProcessingState::Loaded(voxel))
+                    let mut atlas = AtlasData::default();
+                    let data = build_voxel::<V>(model, &mut atlas);
+                    let atlas = loader.load_from_data(atlas, (), atlas_storage);
+                    Ok(ProcessingState::Loaded(DynamicVoxelMeshData {
+                        data,
+                        atlas,
+                    }))
                 }
             },
             data.time.frame_number(),
@@ -215,21 +250,26 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessor<B, V> 
 
         data.mesh_storage.process(
             {
-                let material_storage = &mut data.material_storage;
                 let queue_id = &data.queue_id;
                 let factory = &data.factory;
+                let loader = &data.loader;
+                let atlas_storage = &data.atlas_storage;
                 move |model| {
-                    let voxel = build_voxel::<V>(model, material_storage);
+                    let mut atlas = AtlasData::default();
+
+                    let voxel = build_voxel::<V>(model, &mut atlas);
+
                     Ok(ProcessingState::Loaded(VoxelMesh {
                         inner: build_mesh(
                             &voxel,
                             VoxelContext::new(&voxel),
                             vec3(0.0, 0.0, 0.0),
                             1.0,
-                            material_storage,
+                            &atlas,
                             **queue_id,
                             factory,
                         ),
+                        atlas: loader.load_from_data(atlas, (), atlas_storage),
                     }))
                 }
             },
@@ -240,26 +280,36 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessor<B, V> 
     }
 }
 
-fn build_voxel<V>(model: ModelData, material_storage: &mut VoxelMaterialStorage) -> Voxel<V>
+fn build_voxel<V>(model: ModelData, atlas: &mut AtlasData) -> Voxel<V>
 where
     V: Data + Default,
 {
-    let materials: Vec<_> = model
-        .materials
+    let mut materials_map = HashMap::new();
+
+    let voxels = model
+        .voxels
         .iter()
-        .map(|m| material_storage.create(m.clone()))
-        .collect();
+        .map(|(index, material)| {
+            (
+                *index,
+                materials_map
+                    .entry(material)
+                    .or_insert_with(|| atlas.create_without_id(model.materials[*material].clone()))
+                    .clone(),
+            )
+        })
+        .collect::<Vec<(usize, AtlasMaterialHandle)>>();
 
     let mut voxel = Voxel::<V>::from_iter(Default::default(), std::iter::repeat(Voxel::default()));
 
-    for (index, material) in model.voxels {
+    for (index, material) in voxels {
         let x = index % model.dimensions[0];
         let y = (index / (model.dimensions[0] * model.dimensions[1])) % model.dimensions[2];
         let z = (index / model.dimensions[0]) % model.dimensions[1];
 
         if x < Voxel::<V>::WIDTH && y < Voxel::<V>::WIDTH && z < Voxel::<V>::WIDTH {
             if let Some(sub) = voxel.get_mut(Voxel::<V>::coord_to_index(x, y, z)) {
-                std::mem::replace(sub, Voxel::filled(Default::default(), materials[material]));
+                std::mem::replace(sub, Voxel::filled(Default::default(), material));
             }
         }
     }
@@ -267,12 +317,12 @@ where
     voxel
 }
 
-fn build_mesh<B, V, C>(
+fn build_mesh<B, V, C, A>(
     voxel: &Voxel<V>,
     context: C,
     pos: Vec3,
     scale: f32,
-    materials: &VoxelMaterialStorage,
+    atlas: &A,
     queue: QueueId,
     factory: &Factory<B>,
 ) -> Option<Mesh>
@@ -280,6 +330,7 @@ where
     B: Backend,
     V: Data,
     C: Context<V>,
+    A: AtlasAccess,
 {
     let ao = AmbientOcclusion::build(voxel, &context);
 
@@ -294,7 +345,7 @@ where
     let tex: Vec<_> = tex
         .into_iter()
         .map(|texturing| {
-            let [u, v] = materials.coord(texturing.material_id, texturing.side, texturing.coord);
+            let [u, v] = atlas.coord(texturing.material_id, texturing.side, texturing.coord);
             Surface {
                 tex_ao: [u, v, texturing.ao],
             }

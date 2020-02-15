@@ -1,3 +1,4 @@
+use crate::material::AtlasProcessor;
 use crate::{mesh::*, voxel::Data, world::VoxelSource, world::VoxelWorld};
 use amethyst::{
     core::bundle::SystemBundle,
@@ -75,12 +76,7 @@ impl<'a, 'b> SystemBundle<'a, 'b> for VoxelBundle {
         world: &mut World,
         builder: &mut DispatcherBuilder<'a, 'b>,
     ) -> Result<(), Error> {
-        builder.add(
-            crate::material::VoxelMaterialSystem,
-            "voxel_material_system",
-            &[],
-        );
-        builder.add(crate::model::ModelProcessor, "voxel_model_processor", &[]);
+        builder.add(AtlasProcessor, "atlas_processor", &[]);
         for sys in self.systems.into_iter() {
             sys(world, builder);
         }

@@ -11,7 +11,7 @@ use amethyst::renderer::{
     util,
 };
 
-use crate::{material::VoxelMaterialStorage, mesh::*};
+use crate::{material::*, mesh::*};
 use amethyst::core::{
     ecs::{Join, Read, ReadStorage, SystemData, World},
     transform::Transform,
@@ -189,14 +189,14 @@ where
         let (
             //visibility,
             mesh_storage,
+            atlas_storage,
             meshes,
-            materials,
             transforms,
             tints,
         ) = <(
             Read<'_, AssetStorage<VoxelMesh>>,
+            Read<'_, AssetStorage<Atlas>>,
             ReadStorage<'_, Handle<VoxelMesh>>,
-            Read<'_, VoxelMaterialStorage>,
             ReadStorage<'_, Transform>,
             ReadStorage<'_, Tint>,
         )>::fetch(world);
@@ -211,24 +211,24 @@ where
         let statics_ref = &mut self.static_batches;
         let transparency = self.transparency;
 
-        if let Some(mat) = materials.handle() {
-            (&meshes, &transforms, tints.maybe())
-                .join()
-                .filter_map(|(mesh, tform, tint)| {
-                    if tint.map(|tint| tint.0.alpha < 1.0).unwrap_or(false) != transparency {
-                        None
-                    } else {
-                        Some(((mat, mesh.id()), VertexArgs::from_object_data(tform, tint)))
-                    }
-                })
-                .for_each_group(|(mat, id), data| {
-                    if mesh_storage.contains_id(id) {
-                        if let Some((mat, _)) = materials_ref.insert(factory, world, mat) {
-                            statics_ref.insert(mat, id, data.drain(..));
+        (&meshes, &transforms, tints.maybe())
+            .join()
+            .filter_map(|(mesh, tform, tint)| {
+                if tint.map(|tint| tint.0.alpha < 1.0).unwrap_or(false) != transparency {
+                    None
+                } else {
+                    Some((mesh.id(), VertexArgs::from_object_data(tform, tint)))
+                }
+            })
+            .for_each_group(|mesh_id, data| {
+                if let Some(mesh) = mesh_storage.get_by_id(mesh_id) {
+                    if let Some(mat) = atlas_storage.get(&mesh.atlas) {
+                        if let Some((mat, _)) = materials_ref.insert(factory, world, &mat.handle) {
+                            statics_ref.insert(mat, mesh_id, data.drain(..));
                         }
                     }
-                });
-        }
+                }
+            });
 
         self.static_batches.prune();
         if self.models.write(

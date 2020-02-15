@@ -1,7 +1,9 @@
+use crate::material::Atlas;
 use crate::mesh::*;
 use crate::voxel::*;
 
 use amethyst::{
+    assets::Handle,
     core::{
         ecs::storage::{GenericReadStorage, GenericWriteStorage},
         transform::Transform,
@@ -26,6 +28,7 @@ pub struct VoxelWorld<T: Data> {
     limits: Limits,
     visibility: [f32; 6],
     view_range: f32,
+    atlas: Handle<Atlas>,
     pub(crate) data: Vec<Chunk<T>>,
     pub(crate) dims: [usize; 3],
     pub(crate) origin: [isize; 3],
@@ -96,7 +99,7 @@ pub(crate) enum Chunk<T: Data> {
 impl<T: Data> VoxelWorld<T> {
     /// Create a new `VoxelWorld` component with specified render distance `dims` and a specified chunk `scale`.
     /// The `VoxelWorld` will still require a `VoxelSource`, that should be added to the entity separately.
-    pub fn new(dims: [usize; 3], scale: f32) -> Self {
+    pub fn new(atlas: Handle<Atlas>, dims: [usize; 3], scale: f32) -> Self {
         Self {
             loaded: false,
             limits: Limits {
@@ -105,6 +108,7 @@ impl<T: Data> VoxelWorld<T> {
             },
             visibility: [0.0; 6],
             view_range: 0.0,
+            atlas,
             data: (0..dims[0] * dims[1] * dims[2])
                 .map(|_| Chunk::NotNeeded)
                 .collect(),
@@ -330,7 +334,8 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                 match source.load_voxel(&mut source_data, coord) {
                                     VoxelSourceResult::Ok(chunk) => {
                                         let entity = entities.create();
-                                        let mut mesh = DynamicVoxelMesh::new(chunk);
+                                        let mut mesh =
+                                            DynamicVoxelMesh::new(chunk, world.atlas.clone());
                                         let mut transform = Transform::default();
                                         transform.set_translation(vec3(
                                             coord[0] as f32 * world.scale,
@@ -376,7 +381,8 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                 match request.take() {
                                     Some(chunk) => {
                                         let entity = entities.create();
-                                        let mut mesh = DynamicVoxelMesh::new(chunk);
+                                        let mut mesh =
+                                            DynamicVoxelMesh::new(chunk, world.atlas.clone());
                                         let mut transform = Transform::default();
                                         transform.set_translation(vec3(
                                             coord[0] as f32 * world.scale,

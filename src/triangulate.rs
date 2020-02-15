@@ -1,6 +1,6 @@
 use crate::ambient_occlusion::*;
 use crate::context::Context;
-use crate::material::VoxelMaterialId;
+use crate::material::AtlasMaterialHandle;
 use crate::side::*;
 use crate::voxel::*;
 use nalgebra_glm::*;
@@ -184,7 +184,7 @@ fn triangulate_face<T, S>(
     ao: &AmbientOcclusion,
     origin: Vec3,
     scale: f32,
-    material: VoxelMaterialId,
+    material: AtlasMaterialHandle,
 ) where
     T: Data,
     S: Side<T>,
