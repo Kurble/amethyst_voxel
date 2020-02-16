@@ -5,7 +5,7 @@ use amethyst::renderer::{
     pipeline::{PipelineDescBuilder, PipelinesBuilder},
     pod::{SkinnedVertexArgs, VertexArgs},
     resources::Tint,
-    skinning::JointCombined,
+    skinning::{JointCombined, JointTransforms},
     submodules::{DynamicVertexBuffer, EnvironmentSub, MaterialId, MaterialSub, SkinningSub},
     types::Backend,
     util,
@@ -35,6 +35,7 @@ use std::marker::PhantomData;
 #[derivative(Debug(bound = ""), Default(bound = ""))]
 pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef> {
     marker: PhantomData<(B, D)>,
+    skinning: bool,
     transparency: bool,
 }
 
@@ -42,13 +43,17 @@ pub struct DrawVoxelDesc<B: Backend, D: Base3DPassDef> {
 #[derivative(Debug(bound = ""))]
 pub struct DrawVoxel<B: Backend, T: Base3DPassDef> {
     pipeline_basic: B::GraphicsPipeline,
+    pipeline_skinned: Option<B::GraphicsPipeline>,
     pipeline_layout: B::PipelineLayout,
     static_batches: TwoLevelBatch<MaterialId, u32, SmallVec<[VertexArgs; 4]>>,
+    skinned_batches: TwoLevelBatch<MaterialId, u32, SmallVec<[SkinnedVertexArgs; 4]>>,
     vertex_format_base: Vec<VertexFormat>,
     vertex_format_skinned: Vec<VertexFormat>,
     env: EnvironmentSub<B>,
     materials: MaterialSub<B, T::TextureSet>,
+    skinning: SkinningSub<B>,
     models: DynamicVertexBuffer<B, VertexArgs>,
+    skinned_models: DynamicVertexBuffer<B, SkinnedVertexArgs>,
     marker: PhantomData<T>,
     transparency: bool,
 }
@@ -69,9 +74,10 @@ impl AsAttribute for Surface {
 }
 
 impl<B: Backend, T: Base3DPassDef> DrawVoxelDesc<B, T> {
-    pub fn new(transparency: bool) -> Self {
+    pub fn new(skinning: bool, transparency: bool) -> Self {
         Self {
             marker: PhantomData,
+            skinning,
             transparency,
         }
     }
@@ -101,6 +107,7 @@ where
                 hal::pso::ShaderStageFlags::FRAGMENT,
             ],
         )?;
+
         let materials = MaterialSub::new(factory)?;
         let skinning = SkinningSub::new(factory)?;
 
@@ -114,7 +121,7 @@ where
             framebuffer_height,
             &vertex_format_base,
             &vertex_format_skinned,
-            false,
+            self.skinning,
             self.transparency,
             vec![
                 env.raw_layout(),
@@ -128,13 +135,17 @@ where
 
         Ok(Box::new(DrawVoxel::<B, T> {
             pipeline_basic: pipelines.remove(0),
+            pipeline_skinned: pipelines.pop(),
             pipeline_layout,
             static_batches: Default::default(),
+            skinned_batches: Default::default(),
             vertex_format_base,
             vertex_format_skinned,
             env,
             materials,
+            skinning,
             models: DynamicVertexBuffer::new(),
+            skinned_models: DynamicVertexBuffer::new(),
             marker: PhantomData,
             transparency: self.transparency,
         }))
@@ -142,14 +153,14 @@ where
 }
 
 impl<T: Base3DPassDef> Base3DPassDef for VoxelPassDef<T> {
-    const NAME: &'static str = "Triangulate";
+    const NAME: &'static str = "VoxelPass";
     type TextureSet = T::TextureSet;
 
     fn vertex_shader() -> &'static SpirvShader {
         &VOXEL_VERTEX
     }
     fn vertex_skinned_shader() -> &'static SpirvShader {
-        &VOXEL_VERTEX
+        &VOXEL_VERTEX_SKINNED
     }
     fn fragment_shader() -> &'static SpirvShader {
         T::fragment_shader()
@@ -192,12 +203,14 @@ where
             atlas_storage,
             meshes,
             transforms,
+            joints,
             tints,
         ) = <(
             Read<'_, AssetStorage<VoxelMesh>>,
             Read<'_, AssetStorage<Atlas>>,
             ReadStorage<'_, Handle<VoxelMesh>>,
             ReadStorage<'_, Transform>,
+            ReadStorage<'_, JointTransforms>,
             ReadStorage<'_, Tint>,
         )>::fetch(world);
 
@@ -208,12 +221,14 @@ where
         self.static_batches.clear_inner();
 
         let materials_ref = &mut self.materials;
+        let skinning_ref = &mut self.skinning;
         let statics_ref = &mut self.static_batches;
+        let skinned_ref = &mut self.skinned_batches;
         let transparency = self.transparency;
 
-        (&meshes, &transforms, tints.maybe())
+        (&meshes, &transforms, tints.maybe(), !&joints)
             .join()
-            .filter_map(|(mesh, tform, tint)| {
+            .filter_map(|(mesh, tform, tint, _)| {
                 if tint.map(|tint| tint.0.alpha < 1.0).unwrap_or(false) != transparency {
                     None
                 } else {
@@ -230,13 +245,53 @@ where
                 }
             });
 
+        if self.pipeline_skinned.is_some() {
+            (&meshes, &transforms, tints.maybe(), &joints)
+                .join()
+                .filter_map(|(mesh, tform, tint, joints)| {
+                    if tint.map(|tint| tint.0.alpha < 1.0).unwrap_or(false) != transparency {
+                        None
+                    } else {
+                        Some((
+                            mesh.id(),
+                            SkinnedVertexArgs::from_object_data(
+                                tform,
+                                tint,
+                                skinning_ref.insert(joints),
+                            ),
+                        ))
+                    }
+                })
+                .for_each_group(|mesh_id, data| {
+                    if let Some(mesh) = mesh_storage.get_by_id(mesh_id) {
+                        if let Some(mat) = atlas_storage.get(&mesh.atlas) {
+                            if let Some((mat, _)) =
+                                materials_ref.insert(factory, world, &mat.handle)
+                            {
+                                skinned_ref.insert(mat, mesh_id, data.drain(..));
+                            }
+                        }
+                    }
+                });
+        }
+
         self.static_batches.prune();
-        if self.models.write(
+        self.skinned_batches.prune();
+
+        let static_changed = self.models.write(
             factory,
             index,
             self.static_batches.count() as u64,
             self.static_batches.data(),
-        ) {
+        );
+        let skinned_changed = self.skinned_models.write(
+            factory,
+            index,
+            self.skinned_batches.count() as u64,
+            self.skinned_batches.data(),
+        );
+        self.skinning.commit(factory, index);
+        if static_changed || skinned_changed {
             PrepareResult::DrawRecord
         } else {
             PrepareResult::DrawReuse
@@ -300,6 +355,12 @@ where
 lazy_static::lazy_static! {
     static ref VOXEL_VERTEX: SpirvShader = SpirvShader::new(
         include_bytes!("../compiled/voxels.vert.spv").to_vec(),
+        pso::ShaderStageFlags::VERTEX,
+        "main",
+    );
+
+    static ref VOXEL_VERTEX_SKINNED: SpirvShader = SpirvShader::new(
+        include_bytes!("../compiled/voxels_skinned.vert.spv").to_vec(),
         pso::ShaderStageFlags::VERTEX,
         "main",
     );

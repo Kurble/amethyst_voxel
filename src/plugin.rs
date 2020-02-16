@@ -19,6 +19,7 @@ use rendy::graph::render::RenderGroupDesc;
 #[derivative(Default(bound = ""), Debug(bound = ""))]
 pub struct RenderVoxel<D: Base3DPassDef> {
     target: Target,
+    skinning: bool,
     marker: std::marker::PhantomData<D>,
 }
 
@@ -26,6 +27,12 @@ impl<D: Base3DPassDef> RenderVoxel<D> {
     /// Set target to which 3d meshes will be rendered.
     pub fn with_target(mut self, target: Target) -> Self {
         self.target = target;
+        self
+    }
+
+    /// Enable or disable skinning.
+    pub fn with_skinning(mut self, skinned: bool) -> Self {
+        self.skinning = skinned;
         self
     }
 }
@@ -51,17 +58,18 @@ where
         _factory: &mut Factory<B>,
         _world: &World,
     ) -> Result<(), Error> {
+        let skinning = self.skinning;
         plan.extend_target(self.target, move |ctx| {
             ctx.add(
                 RenderOrder::Opaque,
-                DrawVoxelDesc::<B, D>::new(false).builder(),
+                DrawVoxelDesc::<B, D>::new(skinning, false).builder(),
             )?;
             Ok(())
         });
         plan.extend_target(self.target, move |ctx| {
             ctx.add(
                 RenderOrder::Transparent,
-                DrawVoxelDesc::<B, D>::new(true).builder(),
+                DrawVoxelDesc::<B, D>::new(skinning, true).builder(),
             )?;
             Ok(())
         });
