@@ -161,6 +161,11 @@ impl<T: Data> VoxelWorld<T> {
             .and_then(move |e| chunks.get_mut(e))
             .map(|r| r.deref_mut())
     }
+
+    /// Get a `Handle<Atlas>` to the texture atlas used by this `VoxelWorld`
+    pub fn atlas(&self) -> &Handle<Atlas> {
+        &self.atlas
+    }
 }
 
 impl<T: Data> amethyst::ecs::Component for VoxelWorld<T> {

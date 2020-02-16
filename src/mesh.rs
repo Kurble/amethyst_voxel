@@ -57,7 +57,6 @@ pub struct TriangulatorSystemData<'a, B: Backend, V: Data> {
     mesh_storage: Write<'a, AssetStorage<VoxelMesh>>,
     dynamic_mesh_storage: WriteStorage<'a, DynamicVoxelMesh<V>>,
     handle_storage: WriteStorage<'a, Handle<VoxelMesh>>,
-    atlas_handle_storage: ReadStorage<'a, Handle<Atlas>>,
     world_storage: ReadStorage<'a, VoxelWorld<V>>,
     entities: Entities<'a>,
     queue_id: ReadExpect<'a, QueueId>,
@@ -151,16 +150,12 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> 
     type SystemData = TriangulatorSystemData<'a, B, V>;
 
     fn run(&mut self, mut data: Self::SystemData) {
-        let dirty_meshes = (
-            &data.entities,
-            &data.atlas_handle_storage,
-            &mut data.dynamic_mesh_storage,
-        )
+        let dirty_meshes = (&data.entities, &mut data.dynamic_mesh_storage)
             .join()
             .filter_map({
                 let atlas_storage = &data.atlas_storage;
-                move |(e, a, dynamic_mesh)| {
-                    if dynamic_mesh.dirty && atlas_storage.contains(a) {
+                move |(e, dynamic_mesh)| {
+                    if dynamic_mesh.dirty && atlas_storage.contains(&dynamic_mesh.atlas) {
                         dynamic_mesh.dirty = false;
                         Some(e)
                     } else {
@@ -293,7 +288,7 @@ where
             (
                 *index,
                 materials_map
-                    .entry(material)
+                    .entry(*material)
                     .or_insert_with(|| atlas.create_without_id(model.materials[*material].clone()))
                     .clone(),
             )

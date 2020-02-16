@@ -207,7 +207,7 @@ impl AtlasData {
         self.grid = self.grid.max(material.dimension() * 2);
         self.size = {
             let mut size = 32;
-            while self.materials.len() * self.grid * self.grid > self.size * self.size {
+            while self.materials.len() * self.grid * self.grid > size * size {
                 size *= 2;
             }
             size
@@ -261,7 +261,7 @@ impl Default for ColoredMaterial {
 
 impl VoxelMaterial for ColoredMaterial {
     fn dimension(&self) -> usize {
-        1
+        8
     }
 
     fn sub_side(&self, _: u8) -> usize {
