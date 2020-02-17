@@ -1,6 +1,6 @@
 use crate::{
     material::{ColoredMaterial, VoxelMaterial},
-    model::ModelData,
+    model::*,
 };
 use amethyst::assets::Format;
 use byteorder::*;
@@ -19,16 +19,12 @@ impl Format<ModelData> for VoxFormat {
     }
 
     fn import_simple(&self, bytes: Vec<u8>) -> amethyst::Result<ModelData> {
-        let val = load_vox(bytes.as_slice())
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap();
+        let val = load_vox(bytes.as_slice()).unwrap();
         Ok(val)
     }
 }
 
-fn load_vox<R>(mut reader: R) -> Result<Vec<ModelData>>
+fn load_vox<R>(mut reader: R) -> Result<ModelData>
 where
     R: ReadBytesExt,
 {
@@ -183,23 +179,28 @@ where
         .into();
 
     // Convert the stored chunk data to our own voxel format.
-    Ok(sizes
-        .into_iter()
-        .zip(voxels)
-        .map(|(size, voxels)| {
-            ModelData::new(
-                materials.clone(),
-                voxels
-                    .into_iter()
-                    .map(|(x, y, z, i)| {
-                        let index = x as usize + y as usize * size.0 + z as usize * size.0 * size.1;
-                        (index, i as usize)
-                    })
-                    .collect(),
-                [size.0, size.1, size.2],
-            )
-        })
-        .collect())
+    Ok(ModelData {
+        materials,
+        skeleton: Vec::new(),
+        submodels: sizes
+            .into_iter()
+            .zip(voxels)
+            .enumerate()
+            .map(|(mesh_index, (size, voxels))| {
+                SubModelData::new(
+                    voxels
+                        .into_iter()
+                        .map(|(x, y, z, i)| Instance {
+                            index: x as usize + y as usize * size.0 + z as usize * size.0 * size.1,
+                            material: i as usize,
+                            bone: mesh_index,
+                        })
+                        .collect(),
+                    [size.0, size.1, size.2],
+                )
+            })
+            .collect(),
+    })
 }
 
 // assert without panicking, instead returns an error.

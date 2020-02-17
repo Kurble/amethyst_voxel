@@ -44,6 +44,7 @@ pub struct Texturing {
 }
 
 /// Triangulated mesh data created from a single voxel definition.
+#[derive(Default)]
 pub struct Mesh {
     pub pos: Vec<Position>,
     pub nml: Vec<Normal>,
@@ -55,21 +56,14 @@ pub struct Mesh {
 impl Mesh {
     /// Create a new mesh
     pub fn build<T: Data, C: Context<T>>(
+        &mut self,
         root: &Voxel<T>,
         ao: &AmbientOcclusion,
         context: &C,
         origin: Vec3,
         scale: f32,
-    ) -> Self {
-        let mut result = Self {
-            pos: Vec::new(),
-            nml: Vec::new(),
-            tan: Vec::new(),
-            tex: Vec::new(),
-            ind: Vec::new(),
-        };
-        root.triangulate_all(&mut result, ao, context, origin, scale);
-        result
+    ) {
+        root.triangulate_all(self, ao, context, origin, scale);
     }
 }
 

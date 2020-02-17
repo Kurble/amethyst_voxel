@@ -342,12 +342,16 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                         let mut mesh =
                                             DynamicVoxelMesh::new(chunk, world.atlas.clone());
                                         let mut transform = Transform::default();
+                                        transform.set_scale(vec3(
+                                            world.scale,
+                                            world.scale,
+                                            world.scale,
+                                        ));
                                         transform.set_translation(vec3(
                                             coord[0] as f32 * world.scale,
                                             coord[1] as f32 * world.scale,
                                             coord[2] as f32 * world.scale,
                                         ));
-                                        mesh.scale = world.scale;
                                         mesh.parent = Some((world_entity, [x, y, z]));
                                         meshes.insert(entity, mesh).ok();
                                         transforms.insert(entity, transform).ok();
@@ -389,12 +393,16 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                         let mut mesh =
                                             DynamicVoxelMesh::new(chunk, world.atlas.clone());
                                         let mut transform = Transform::default();
+                                        transform.set_scale(vec3(
+                                            world.scale,
+                                            world.scale,
+                                            world.scale,
+                                        ));
                                         transform.set_translation(vec3(
                                             coord[0] as f32 * world.scale,
                                             coord[1] as f32 * world.scale,
                                             coord[2] as f32 * world.scale,
                                         ));
-                                        mesh.scale = world.scale;
                                         mesh.parent = Some((world_entity, [x, y, z]));
                                         meshes.insert(entity, mesh).ok();
                                         transforms.insert(entity, transform).ok();
