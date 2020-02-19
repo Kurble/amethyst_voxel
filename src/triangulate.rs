@@ -7,35 +7,6 @@ use nalgebra_glm::*;
 use rendy::mesh::{Normal, Position, Tangent};
 use std::iter::repeat;
 
-/// The required functionality to triangulate voxels.
-pub trait Triangulate<T: Data> {
-    /// Returns whether this voxel is visible, i.e. if it has geometry.
-    fn visible(&self) -> bool;
-
-    /// Returns whether the neighbours of this voxel are visible if the camera was inside this voxel.
-    fn render(&self) -> bool;
-
-    /// Triangulate this voxel to the mesh.
-    fn triangulate_self<S: Side<T>, C: Context<T>>(
-        &self,
-        mesh: &mut Mesh,
-        ao: &AmbientOcclusion,
-        context: &C,
-        origin: Vec3,
-        scale: f32,
-    );
-
-    /// Triangulate this voxel to the mesh.
-    fn triangulate_all<C: Context<T>>(
-        &self,
-        mesh: &mut Mesh,
-        ao: &AmbientOcclusion,
-        context: &C,
-        origin: Vec3,
-        scale: f32,
-    );
-}
-
 pub struct Texturing {
     pub material_id: u32,
     pub side: u8,
@@ -55,111 +26,51 @@ pub struct Mesh {
 
 impl Mesh {
     /// Create a new mesh
-    pub fn build<T: Data, C: Context<T>>(
+    pub fn build<'a, T: VoxelMarker, C: Context<T>>(
         &mut self,
-        root: &Voxel<T>,
+        root: &T,
         ao: &AmbientOcclusion,
-        context: &C,
+        context: C,
         origin: Vec3,
         scale: f32,
     ) {
-        root.triangulate_all(self, ao, context, origin, scale);
+        root.triangulate::<Left, C>(self, ao, context.clone(), origin, scale);
+        root.triangulate::<Right, C>(self, ao, context.clone(), origin, scale);
+        root.triangulate::<Below, C>(self, ao, context.clone(), origin, scale);
+        root.triangulate::<Above, C>(self, ao, context.clone(), origin, scale);
+        root.triangulate::<Back, C>(self, ao, context.clone(), origin, scale);
+        root.triangulate::<Front, C>(self, ao, context.clone(), origin, scale);
     }
 }
 
-impl<T: Data> Triangulate<T> for Voxel<T> {
-    fn visible(&self) -> bool {
-        match *self {
-            Voxel::Empty { .. } => false,
-            Voxel::Detail { ref data, .. } => !data.empty(),
-            Voxel::Material { .. } => true,
-            Voxel::Placeholder => false,
-        }
-    }
-
-    fn render(&self) -> bool {
-        match *self {
-            Voxel::Empty { .. } => true,
-            Voxel::Detail { ref data, .. } => !data.solid(),
-            Voxel::Material { .. } => false,
-            Voxel::Placeholder => true,
-        }
-    }
-
-    fn triangulate_self<S: Side<T>, C: Context<T>>(
-        &self,
-        mesh: &mut Mesh,
-        ao: &AmbientOcclusion,
-        context: &C,
-        origin: Vec3,
-        scale: f32,
-    ) {
-        match *self {
-            Voxel::Empty { .. } => (),
-
-            Voxel::Detail { ref detail, .. } => triangulate_detail::<T, Self, S, C>(
-                mesh,
-                ao,
-                context,
-                origin,
-                scale,
-                detail.as_slice(),
-            ),
-
-            Voxel::Material { material, .. } => {
-                triangulate_face::<T, S>(mesh, ao, origin, scale, material)
-            }
-
-            Voxel::Placeholder => (),
-        }
-    }
-
-    fn triangulate_all<C: Context<T>>(
-        &self,
-        mesh: &mut Mesh,
-        ao: &AmbientOcclusion,
-        context: &C,
-        origin: Vec3,
-        scale: f32,
-    ) {
-        self.triangulate_self::<Left, C>(mesh, ao, context, origin, scale);
-        self.triangulate_self::<Right, C>(mesh, ao, context, origin, scale);
-        self.triangulate_self::<Below, C>(mesh, ao, context, origin, scale);
-        self.triangulate_self::<Above, C>(mesh, ao, context, origin, scale);
-        self.triangulate_self::<Back, C>(mesh, ao, context, origin, scale);
-        self.triangulate_self::<Front, C>(mesh, ao, context, origin, scale);
-    }
-}
-
-fn triangulate_detail<'a, D, T, S, C>(
+pub fn triangulate_detail<'a, T, S, C>(
     mesh: &mut Mesh,
     ao: &'a AmbientOcclusion<'a>,
-    context: &'a C,
+    context: C,
     origin: Vec3,
     scale: f32,
-    sub: &[T],
+    sub: &[ChildOf<T>],
 ) where
-    D: Data,
-    T: Triangulate<D>,
-    S: Side<D>,
-    C: Context<D>,
+    T: VoxelMarker,
+    S: Side,
+    C: Context<T>,
 {
     // the scale of a single sub-voxel
-    let scale = scale * Voxel::<D>::SCALE;
+    let scale = scale * Voxel::<T::Data>::SCALE;
     // loop over all sub-voxels and check for visible faces
-    for i in 0..Voxel::<D>::COUNT {
+    for i in 0..Voxel::<T::Data>::COUNT {
         if sub[i].visible() {
-            let x = (i) & Voxel::<D>::LAST;
-            let y = (i >> D::SUBDIV) & Voxel::<D>::LAST;
-            let z = (i >> (D::SUBDIV * 2)) & Voxel::<D>::LAST;
-            let j = (i as isize + S::OFFSET) as usize;
+            let x = (i) & Voxel::<T::Data>::LAST;
+            let y = (i >> <T::Data as Data>::SUBDIV) & Voxel::<T::Data>::LAST;
+            let z = (i >> (<T::Data as Data>::SUBDIV * 2)) & Voxel::<T::Data>::LAST;
+            let j = (i as isize + S::offset::<T::Data>()) as usize;
 
             if sub[i].render()
-                || (S::accept(x, y, z) && sub[j].render())
+                || (S::accept::<T::Data>(x, y, z) && sub[j].render())
                 || context.render(x as isize + S::DX, y as isize + S::DY, z as isize + S::DZ)
             {
                 let ao = &ao.sub(x, y, z);
-                let ctx = &context.child(x as isize, y as isize, z as isize);
+                let ctx = context.child(x as isize, y as isize, z as isize);
                 let src = vec3(
                     origin.x + x as f32 * scale,
                     origin.y + y as f32 * scale,
@@ -167,13 +78,13 @@ fn triangulate_detail<'a, D, T, S, C>(
                 );
 
                 // add the visible face
-                sub[i].triangulate_self::<S, _>(mesh, ao, ctx, src, scale);
+                sub[i].triangulate::<S, _>(mesh, ao, ctx, src, scale);
             }
         }
     }
 }
 
-fn triangulate_face<T, S>(
+pub fn triangulate_face<T, S>(
     mesh: &mut Mesh,
     ao: &AmbientOcclusion,
     origin: Vec3,
@@ -181,7 +92,7 @@ fn triangulate_face<T, S>(
     material: AtlasMaterialHandle,
 ) where
     T: Data,
-    S: Side<T>,
+    S: Side,
 {
     let sc = scale * 0.5;
     let quad = [

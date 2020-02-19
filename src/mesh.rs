@@ -16,12 +16,13 @@ use crate::material::*;
 use crate::model::*;
 use crate::pass::*;
 use crate::triangulate::Mesh;
-use crate::voxel::{Data, Voxel};
+use crate::voxel::{Data, Voxel, VoxelMarker};
 use crate::world::VoxelWorld;
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 /// Asset for voxelmesh rendering
 pub struct VoxelMesh {
@@ -108,7 +109,7 @@ impl<T: Data> DynamicVoxelMesh<T> {
     /// Create a new `VoxelRender` component with a new `Voxel<T>` created from an iterator.
     pub fn from_iter<I>(data: T, atlas: Handle<Atlas>, iter: I) -> Self
     where
-        I: IntoIterator<Item = Voxel<T>>,
+        I: IntoIterator<Item = T::Child>,
     {
         DynamicVoxelMesh {
             data: Voxel::from_iter(data, iter),
@@ -255,7 +256,9 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessor<B, V> 
                     let voxels = model
                         .submodels
                         .iter()
-                        .map(|sub| (sub, build_voxel::<V>(&model, sub, &mut atlas)))
+                        .map(|sub| {
+                            (sub, build_voxel::<V>(&model, sub, &mut atlas))
+                        })
                         .collect::<Vec<_>>();
 
                     let mesh = build_mesh(
@@ -280,10 +283,11 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessor<B, V> 
     }
 }
 
-fn build_voxel<V>(model: &ModelData, submodel: &SubModelData, atlas: &mut AtlasData) -> Voxel<V>
-where
-    V: Data + Default,
-{
+fn build_voxel<V: Data>(
+    model: &ModelData,
+    submodel: &SubModelData,
+    atlas: &mut AtlasData,
+) -> Voxel<V> {
     let mut materials_map = HashMap::new();
 
     let voxels = submodel
@@ -302,7 +306,9 @@ where
         })
         .collect::<Vec<(usize, AtlasMaterialHandle)>>();
 
-    let mut voxel = Voxel::<V>::from_iter(Default::default(), std::iter::repeat(Voxel::default()));
+    let mut detail: Vec<V::Child> = std::iter::repeat(VoxelMarker::new_empty(Default::default()))
+        .take(Voxel::<V>::COUNT)
+        .collect();
 
     for (index, material) in voxels {
         let x = index % submodel.dimensions[0];
@@ -311,16 +317,18 @@ where
         let z = (index / submodel.dimensions[0]) % submodel.dimensions[1];
 
         if x < Voxel::<V>::WIDTH && y < Voxel::<V>::WIDTH && z < Voxel::<V>::WIDTH {
-            if let Some(sub) = voxel.get_mut(Voxel::<V>::coord_to_index(x, y, z)) {
-                std::mem::replace(sub, Voxel::filled(Default::default(), material));
-            }
+            detail[Voxel::<V>::coord_to_index(x, y, z)] =
+                VoxelMarker::new_filled(Default::default(), material);
         }
     }
 
-    voxel
+    Voxel::Detail {
+        data: Default::default(),
+        detail: Arc::new(detail),
+    }
 }
 
-fn build_mesh<'a, B, V, C, A, I>(
+fn build_mesh<'a, 'c, B, V, C, A, I>(
     iter: I,
     atlas: &A,
     queue: QueueId,
@@ -328,17 +336,17 @@ fn build_mesh<'a, B, V, C, A, I>(
 ) -> Option<amethyst::renderer::types::Mesh>
 where
     B: Backend,
-    V: Data,
+    V: VoxelMarker,
     C: Context<V>,
     A: AtlasAccess,
-    I: IntoIterator<Item = (&'a Voxel<V>, C, &'a Mat4x4)>,
+    I: IntoIterator<Item = (&'a V, C, &'a Mat4x4)>,
 {
     let mut mesh = Mesh::default();
 
     for (voxel, context, transform) in iter {
-        let ao = AmbientOcclusion::build(voxel, &context);
+        let ao = AmbientOcclusion::build(voxel, context.clone());
         let start = mesh.pos.len();
-        mesh.build::<V, C>(voxel, &ao, &context, vec3(0.0, 0.0, 0.0), 1.0);
+        mesh.build::<V, C>(voxel, &ao, context.clone(), vec3(0.0, 0.0, 0.0), 1.0);
         for i in start..mesh.pos.len() {
             let pos: [f32; 3] = mesh.pos[i].0.into();
             let nml: [f32; 3] = mesh.nml[i].0.into();

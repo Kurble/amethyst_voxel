@@ -1,10 +1,8 @@
 use nalgebra_glm::*;
 use std::ops::{Deref, DerefMut};
 
-use crate::triangulate::Triangulate;
-use crate::voxel::{Data, Voxel};
-use crate::world::{VoxelWorldAccess};
-
+use crate::voxel::{Data, Voxel, VoxelMarker};
+use crate::world::VoxelWorldAccess;
 
 /// A ray that can be used to perform raycasting on a specific type that implements `Raycast`.
 /// The ray is not compatible with other `Raycast` implementations.
@@ -180,14 +178,14 @@ impl<'a, 'b, V: Data> Raycast for VoxelWorldAccess<'a, 'b, V> {
     }
 }
 
-impl<T: Data> Raycast for Voxel<T> {
-    type Child = Self;
+impl<T: VoxelMarker> Raycast for T {
+    type Child = <T::Data as Data>::Child;
 
     fn cast(&self, ray: &Ray) -> Option<Intersection> {
         // the current location being checked on the ray
         // scales the origin so that we're in subvoxel space.
         let transform = inverse(&ray.transform);
-        let scale = (1 << T::SUBDIV) as f32;
+        let scale = (1 << <T::Data as Data>::SUBDIV) as f32;
         let current_direction = transform.transform_vector(&ray.direction);
         let current = transform * vec4(ray.origin[0], ray.origin[1], ray.origin[2], 1.0);
         let mut current = vec4_to_vec3(&current) * scale;
@@ -207,7 +205,14 @@ impl<T: Data> Raycast for Voxel<T> {
             }
         }
 
-        cast(self, ray, current, current_direction, 6 * Self::WIDTH).map(|mut intersection| {
+        cast(
+            self,
+            ray,
+            current,
+            current_direction,
+            6 * Voxel::<T::Data>::WIDTH,
+        )
+        .map(|mut intersection| {
             let mut pos = vec3_to_vec4(&intersection.position) / scale;
             pos.w = 1.0;
             pos = ray.transform * pos;
@@ -224,45 +229,42 @@ impl<T: Data> Raycast for Voxel<T> {
         normal: Vec3,
     ) -> Option<Intersection> {
         if (0..3).fold(true, |b, i| {
-            b && coord[i] >= 0 && coord[i] < Self::WIDTH as isize
+            b && coord[i] >= 0 && coord[i] < Voxel::<T::Data>::WIDTH as isize
         }) {
-            let i = coord[0] as usize + coord[1] as usize * Self::DY + coord[2] as usize * Self::DZ;
+            let i = coord[0] as usize
+                + coord[1] as usize * Voxel::<T::Data>::DY
+                + coord[2] as usize * Voxel::<T::Data>::DZ;
             if let Some(voxel) = self.get(i) {
                 if voxel.visible() {
-                    match voxel {
-                        Voxel::Empty { .. } => (),
-                        Voxel::Placeholder => (),
-                        Voxel::Material { .. } => {
+                    if voxel.is_detail() {
+                        let sc = Voxel::<T::Data>::SCALE;
+                        let s = scaling(&vec3(sc, sc, sc));
+                        let t = translation(&vec3(
+                            coord[0] as f32 * sc,
+                            coord[1] as f32 * sc,
+                            coord[2] as f32 * sc,
+                        ));
+                        let r = Ray {
+                            transform: ray.transform * t * s,
+                            origin: ray.origin,
+                            direction: ray.direction,
+                            length: ray.length,
+                        };
+                        if let Some(sub) = voxel.cast(&r) {
                             return Some(Intersection {
-                                inner: None,
+                                inner: Some(Box::new(sub)),
                                 index: i,
                                 position: current,
                                 normal,
                             });
                         }
-                        Voxel::Detail { .. } => {
-                            let sc = Self::SCALE;
-                            let s = scaling(&vec3(sc, sc, sc));
-                            let t = translation(&vec3(
-                                coord[0] as f32 * sc,
-                                coord[1] as f32 * sc,
-                                coord[2] as f32 * sc,
-                            ));
-                            let r = Ray {
-                                transform: ray.transform * t * s,
-                                origin: ray.origin,
-                                direction: ray.direction,
-                                length: ray.length,
-                            };
-                            if let Some(sub) = voxel.cast(&r) {
-                                return Some(Intersection {
-                                    inner: Some(Box::new(sub)),
-                                    index: i,
-                                    position: current,
-                                    normal,
-                                });
-                            }
-                        }
+                    } else {
+                        return Some(Intersection {
+                            inner: None,
+                            index: i,
+                            position: current,
+                            normal,
+                        });
                     }
                 }
             }
@@ -271,11 +273,11 @@ impl<T: Data> Raycast for Voxel<T> {
         None
     }
 
-    fn get(&self, intersection: &Intersection) -> Option<&Self> {
+    fn get(&self, intersection: &Intersection) -> Option<&<T::Data as Data>::Child> {
         self.get(intersection.index)
     }
 
-    fn get_mut(&mut self, intersection: &Intersection) -> Option<&mut Self> {
+    fn get_mut(&mut self, intersection: &Intersection) -> Option<&mut <T::Data as Data>::Child> {
         self.get_mut(intersection.index)
     }
 }

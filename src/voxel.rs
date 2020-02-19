@@ -2,13 +2,56 @@ use std::iter::FromIterator;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use nalgebra_glm::Vec3;
+
 use crate::material::AtlasMaterialHandle;
+use crate::triangulate::Mesh;
+use crate::context::Context;
+use crate::side::Side;
+use crate::ambient_occlusion::AmbientOcclusion;
+
+pub trait VoxelMarker: 'static + Clone + Send + Sync {
+    type Data: Data;
+
+    /// Construct a new, empty voxel.
+    fn new_empty(data: Self::Data) -> Self;
+
+    /// Construct a new, filled voxel. The voxel will be filled with one single material.
+    fn new_filled(data: Self::Data, material: AtlasMaterialHandle) -> Self;
+
+    /// Retrieve a reference to subvoxel at index.
+    fn get(&self, index: usize) -> Option<&<Self::Data as Data>::Child>;
+
+    /// Mutably retrieve subvoxel at index
+    fn get_mut(&mut self, index: usize) -> Option<&mut <Self::Data as Data>::Child>;
+
+    /// Returns whether this voxel is visible, i.e. if it has geometry.
+    fn visible(&self) -> bool;
+
+    /// Returns whether the neighbours of this voxel are visible if the camera was inside this voxel.
+    fn render(&self) -> bool;
+
+    /// Whether this voxel has subvoxels.
+    fn is_detail(&self) -> bool;
+
+    /// Triangulate the voxel on a specific side
+    fn triangulate<'a, S: Side, C: Context<Self>>(
+        &self,
+        mesh: &mut Mesh,
+        ao: &AmbientOcclusion,
+        context: C,
+        origin: Vec3,
+        scale: f32,
+    );
+}
 
 /// Trait for user data associated with voxels.
-pub trait Data: 'static + Clone + Send + Sync {
+pub trait Data: 'static + Default + Clone + Send + Sync {
     /// The amount of subdivisions to do in order to create child voxels.
     /// A value of 4 means that 2^4=16 subvoxels would be created at every axis, for a total of 16^3=4096 subvoxels.
     const SUBDIV: usize;
+
+    type Child: VoxelMarker;
 
     /// Informs the triangulator whether the voxel that owns this data should be considered
     ///  as a solid voxel or not.
@@ -24,6 +67,9 @@ pub trait Data: 'static + Clone + Send + Sync {
     }
 }
 
+#[allow(type_alias_bounds)]
+pub type ChildOf<T: VoxelMarker> = <T::Data as Data>::Child;
+
 /// A single voxel with nesting capability.
 #[derive(Clone)]
 pub enum Voxel<T: Data> {
@@ -37,7 +83,7 @@ pub enum Voxel<T: Data> {
     Detail {
         /// A shared array of subvoxels. The array is shared so that templated detail voxels can be
         /// represented cheaply.
-        detail: Arc<Vec<Self>>,
+        detail: Arc<Vec<T::Child>>,
 
         /// User data for the voxel.
         data: T,
@@ -79,44 +125,101 @@ impl<T: Data> Voxel<T> {
         (x, y, z)
     }
 
-    /// Construct a new, empty voxel. The voxel will have no content at all.
-    pub fn new(data: T) -> Self {
-        Voxel::Empty { data }
-    }
-
     /// Construct a Voxel::Detail from an iterator.
     pub fn from_iter<I>(data: T, iter: I) -> Self
     where
-        I: IntoIterator<Item = Self>,
+        I: IntoIterator<Item = T::Child>,
     {
         Voxel::Detail {
             data,
             detail: Arc::new(Vec::from_iter(iter.into_iter().take(Self::COUNT))),
         }
     }
+}
 
-    /// Construct a Voxel::Material voxel. The voxel will be filled with one single material.
-    pub fn filled(data: T, material: AtlasMaterialHandle) -> Self {
+impl<T: Data> VoxelMarker for Voxel<T> {
+    type Data = T;
+
+    fn new_empty(data: Self::Data) -> Self {
+        Voxel::Empty { data }
+    }
+
+    fn new_filled(data: Self::Data, material: AtlasMaterialHandle) -> Self {
         Voxel::Material { data, material }
     }
 
-    /// Retrieve a reference to subvoxel at index.
-    pub fn get(&self, index: usize) -> Option<&Self> {
+    fn get(&self, index: usize) -> Option<&<T as Data>::Child> {
         match *self {
             Voxel::Empty { .. } => None,
             Voxel::Detail { ref detail, .. } => detail.get(index),
-            Voxel::Material { .. } => Some(self),
+            Voxel::Material { .. } => None,
             Voxel::Placeholder => None,
         }
     }
 
-    /// Mutably retrieve subvoxel at index
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut Self> {
+    fn get_mut(&mut self, index: usize) -> Option<&mut <T as Data>::Child> {
         match *self {
             Voxel::Empty { .. } => None,
             Voxel::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
-            Voxel::Material { .. } => Some(self),
+            Voxel::Material { .. } => None,
             Voxel::Placeholder => None,
+        }
+    }
+
+    fn visible(&self) -> bool {
+        match *self {
+            Voxel::Empty { .. } => false,
+            Voxel::Detail { ref data, .. } => !data.empty(),
+            Voxel::Material { .. } => true,
+            Voxel::Placeholder => false,
+        }
+    }
+
+    fn render(&self) -> bool {
+        match *self {
+            Voxel::Empty { .. } => true,
+            Voxel::Detail { ref data, .. } => !data.solid(),
+            Voxel::Material { .. } => false,
+            Voxel::Placeholder => true,
+        }
+    }
+
+    fn is_detail(&self) -> bool {
+        if let Voxel::Detail { .. } = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn triangulate<'a, S: Side, C: Context<Self>>(
+        &self,
+        mesh: &mut Mesh,
+        ao: &AmbientOcclusion,
+        context: C,
+        origin: Vec3,
+        scale: f32,
+    ) {
+        use crate::triangulate::*;
+        match *self {
+            Voxel::Empty { .. } => (),
+
+            Voxel::Detail { ref detail, .. } => {
+                triangulate_detail::<Self, S, C>(
+                    mesh,
+                    ao,
+                    context,
+                    origin,
+                    scale,
+                    detail.as_slice(),
+                )
+            }
+
+            Voxel::Material { material, .. } => {
+                triangulate_face::<T, S>(mesh, ao, origin, scale, material)
+            }
+
+            Voxel::Placeholder => (),
         }
     }
 }

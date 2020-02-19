@@ -1,7 +1,6 @@
 use crate::context::Context;
 use crate::side::Side;
-use crate::triangulate::Triangulate;
-use crate::voxel::{Data, Voxel};
+use crate::voxel::{Data, Voxel, VoxelMarker};
 use std::collections::HashMap;
 
 pub enum AmbientOcclusion<'a> {
@@ -19,96 +18,90 @@ pub enum AmbientOcclusion<'a> {
 }
 
 impl AmbientOcclusion<'_> {
-    pub fn is_detail<T: Data>(voxel: &Voxel<T>) -> bool {
-        match *voxel {
-            Voxel::Empty { .. } | Voxel::Material { .. } | Voxel::Placeholder => false,
-            Voxel::Detail { .. } => true,
-        }
-    }
-
-    pub fn build<T: Data, C: Context<T>>(root: &Voxel<T>, neighbours: &C) -> Self {
-        let w = Voxel::<T>::AO_WIDTH as isize;
-        match *root {
-            Voxel::Empty { .. } | Voxel::Material { .. } | Voxel::Placeholder => {
-                AmbientOcclusion::Small {
-                    occlusion: [0xfff; 8],
-                }
-            }
-
-            Voxel::Detail { ref detail, .. } => {
-                let bound = |x| x < 0 || x > Voxel::<T>::LAST as isize;
-                let sample = |x, y, z| {
-                    if bound(x) || bound(y) || bound(z) {
-                        if neighbours.visible(x, y, z) {
-                            1
-                        } else {
-                            0
-                        }
-                    } else if detail[Voxel::<T>::coord_to_index(x as usize, y as usize, z as usize)]
-                        .visible()
-                    {
+    pub fn build<'a, T: VoxelMarker, C: Context<T>>(root: &T, neighbours: C) -> Self {
+        let w = Voxel::<T::Data>::AO_WIDTH as isize;
+        if root.is_detail() {
+            let bound = |x| x < 0 || x > Voxel::<T::Data>::LAST as isize;
+            let sample = |x, y, z| {
+                if bound(x) || bound(y) || bound(z) {
+                    if neighbours.visible(x, y, z) {
                         1
                     } else {
                         0
                     }
+                } else if root
+                    .get(Voxel::<T::Data>::coord_to_index(
+                        x as usize, y as usize, z as usize,
+                    ))
+                    .unwrap()
+                    .visible()
+                {
+                    1
+                } else {
+                    0
+                }
+            };
+            let process = |s: [u16; 8]| {
+                let table = |s: [u16; 4]| match s {
+                    [0, 0, 0, 0] => 0,
+                    [1, 0, 0, 0] | [0, 1, 0, 0] | [0, 0, 1, 0] | [0, 0, 0, 1] => 1,
+                    [1, 1, 0, 0] | [0, 0, 1, 1] | [0, 1, 0, 1] | [1, 0, 1, 0] => 2,
+                    _ => 3,
                 };
-                let process = |s: [u16; 8]| {
-                    let table = |s: [u16; 4]| match s {
-                        [0, 0, 0, 0] => 0,
-                        [1, 0, 0, 0] | [0, 1, 0, 0] | [0, 0, 1, 0] | [0, 0, 0, 1] => 1,
-                        [1, 1, 0, 0] | [0, 0, 1, 1] | [0, 1, 0, 1] | [1, 0, 1, 0] => 2,
-                        _ => 3,
-                    };
-                    let neg_x = table([s[0], s[1], s[4], s[5]]);
-                    let pos_x = table([s[2], s[3], s[6], s[7]]);
-                    let neg_y = table([s[0], s[1], s[2], s[3]]);
-                    let pos_y = table([s[4], s[5], s[6], s[7]]);
-                    let neg_z = table([s[0], s[2], s[4], s[6]]);
-                    let pos_z = table([s[1], s[3], s[5], s[7]]);
+                let neg_x = table([s[0], s[1], s[4], s[5]]);
+                let pos_x = table([s[2], s[3], s[6], s[7]]);
+                let neg_y = table([s[0], s[1], s[2], s[3]]);
+                let pos_y = table([s[4], s[5], s[6], s[7]]);
+                let neg_z = table([s[0], s[2], s[4], s[6]]);
+                let pos_z = table([s[1], s[3], s[5], s[7]]);
 
-                    (neg_x << 10)
-                        | (pos_x << 8)
-                        | (neg_y << 6)
-                        | (pos_y << 4)
-                        | (neg_z << 2)
-                        | (pos_z)
-                };
+                (neg_x << 10) | (pos_x << 8) | (neg_y << 6) | (pos_y << 4) | (neg_z << 2) | (pos_z)
+            };
 
-                let occlusion = (0..w)
-                    .flat_map(move |z| {
-                        (0..w).flat_map(move |y| {
-                            (0..w).map(move |x| {
-                                process([
-                                    sample(x - 1, y - 1, z - 1),
-                                    sample(x - 1, y - 1, z),
-                                    sample(x, y - 1, z - 1),
-                                    sample(x, y - 1, z),
-                                    sample(x - 1, y, z - 1),
-                                    sample(x - 1, y, z),
-                                    sample(x, y, z - 1),
-                                    sample(x, y, z),
-                                ])
-                            })
+            let occlusion = (0..w)
+                .flat_map(move |z| {
+                    (0..w).flat_map(move |y| {
+                        (0..w).map(move |x| {
+                            process([
+                                sample(x - 1, y - 1, z - 1),
+                                sample(x - 1, y - 1, z),
+                                sample(x, y - 1, z - 1),
+                                sample(x, y - 1, z),
+                                sample(x - 1, y, z - 1),
+                                sample(x - 1, y, z),
+                                sample(x, y, z - 1),
+                                sample(x, y, z),
+                            ])
                         })
                     })
-                    .collect();
+                })
+                .collect();
 
-                AmbientOcclusion::Big {
-                    occlusion,
-                    detail: (0..Voxel::<T>::COUNT)
-                        .filter_map(|index| {
-                            if Self::is_detail(&detail[index]) {
-                                let (x, y, z) = Voxel::<T>::index_to_coord(index);
-                                let neighbours =
-                                    neighbours.child(x as isize, y as isize, z as isize);
-                                Some((index, Self::build(&detail[index], &neighbours)))
+            AmbientOcclusion::Big {
+                occlusion,
+                detail: (0..Voxel::<T::Data>::COUNT)
+                    .filter_map(|index| {
+                        root.get(index).and_then(|voxel| {
+                            if voxel.is_detail() {
+                                let (x, y, z) = Voxel::<T::Data>::index_to_coord(index);
+                                Some((
+                                    index,
+                                    Self::build(
+                                        voxel,
+                                        neighbours.child(x as isize, y as isize, z as isize),
+                                    ),
+                                ))
                             } else {
                                 None
                             }
                         })
-                        .collect(),
-                    width: Voxel::<T>::AO_WIDTH,
-                }
+                    })
+                    .collect(),
+                width: Voxel::<T::Data>::AO_WIDTH,
+            }
+        } else {
+            AmbientOcclusion::Small {
+                occlusion: [0xfff; 8],
             }
         }
     }
@@ -149,7 +142,7 @@ impl AmbientOcclusion<'_> {
         }
     }
 
-    pub fn quad<T: Data, S: Side<T>>(&self) -> [f32; 4] {
+    pub fn quad<T: Data, S: Side>(&self) -> [f32; 4] {
         let f = |d: u16, s: u16| 1.0 - f32::from((d >> s) & 0x03) / 4.0;
         match *self {
             AmbientOcclusion::Small { occlusion } => {

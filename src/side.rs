@@ -1,31 +1,32 @@
 use crate::voxel::{Data, Voxel};
 use nalgebra_glm::{Mat3, Vec3};
 
-pub trait Side<T: Data> {
-    const OFFSET: isize;
+pub trait Side {
     const SIDE: usize;
-
     const DX: isize;
     const DY: isize;
     const DZ: isize;
 
-    fn accept(x: usize, y: usize, z: usize) -> bool;
+    fn offset<T: Data>() -> isize;
+
+    fn accept<T: Data>(x: usize, y: usize, z: usize) -> bool;
 
     fn orientation() -> Mat3;
 }
 
 pub struct Left;
 
-impl<T: Data> Side<T> for Left {
-    const OFFSET: isize = (Voxel::<T>::DX as isize);
-
+impl Side for Left {
     const SIDE: usize = 1;
-
     const DX: isize = 1;
     const DY: isize = 0;
     const DZ: isize = 0;
 
-    fn accept(x: usize, _: usize, _: usize) -> bool {
+    fn offset<T: Data>() -> isize { 
+        Voxel::<T>::DX as isize 
+    }
+
+    fn accept<T: Data>(x: usize, _: usize, _: usize) -> bool {
         x < Voxel::<T>::LAST
     }
 
@@ -40,16 +41,17 @@ impl<T: Data> Side<T> for Left {
 
 pub struct Right;
 
-impl<T: Data> Side<T> for Right {
-    const OFFSET: isize = -(Voxel::<T>::DX as isize);
-
+impl Side for Right {
     const SIDE: usize = 0;
-
     const DX: isize = -1;
     const DY: isize = 0;
     const DZ: isize = 0;
 
-    fn accept(x: usize, _: usize, _: usize) -> bool {
+    fn offset<T: Data>() -> isize {
+        -(Voxel::<T>::DX as isize)
+    }
+
+    fn accept<T: Data>(x: usize, _: usize, _: usize) -> bool {
         x > 0
     }
 
@@ -64,16 +66,17 @@ impl<T: Data> Side<T> for Right {
 
 pub struct Below;
 
-impl<T: Data> Side<T> for Below {
-    const OFFSET: isize = Voxel::<T>::DY as isize;
-
+impl Side for Below {
     const SIDE: usize = 3;
-
     const DX: isize = 0;
     const DY: isize = 1;
     const DZ: isize = 0;
 
-    fn accept(_: usize, y: usize, _: usize) -> bool {
+    fn offset<T: Data>() -> isize {
+        Voxel::<T>::DY as isize
+    }
+
+    fn accept<T: Data>(_: usize, y: usize, _: usize) -> bool {
         y < Voxel::<T>::LAST
     }
 
@@ -88,16 +91,17 @@ impl<T: Data> Side<T> for Below {
 
 pub struct Above;
 
-impl<T: Data> Side<T> for Above {
-    const OFFSET: isize = -(Voxel::<T>::DY as isize);
-
+impl Side for Above {
     const SIDE: usize = 2;
-
     const DX: isize = 0;
     const DY: isize = -1;
     const DZ: isize = 0;
 
-    fn accept(_: usize, y: usize, _: usize) -> bool {
+    fn offset<T: Data>() -> isize {
+        -(Voxel::<T>::DY as isize)
+    }
+
+    fn accept<T: Data>(_: usize, y: usize, _: usize) -> bool {
         y > 0
     }
 
@@ -112,16 +116,17 @@ impl<T: Data> Side<T> for Above {
 
 pub struct Back;
 
-impl<T: Data> Side<T> for Back {
-    const OFFSET: isize = Voxel::<T>::DZ as isize;
-
+impl Side for Back {
     const SIDE: usize = 5;
-
     const DX: isize = 0;
     const DY: isize = 0;
     const DZ: isize = 1;
 
-    fn accept(_: usize, _: usize, z: usize) -> bool {
+    fn offset<T: Data>() -> isize {
+        Voxel::<T>::DZ as isize
+    }
+
+    fn accept<T: Data>(_: usize, _: usize, z: usize) -> bool {
         z < Voxel::<T>::LAST
     }
 
@@ -136,16 +141,17 @@ impl<T: Data> Side<T> for Back {
 
 pub struct Front;
 
-impl<T: Data> Side<T> for Front {
-    const OFFSET: isize = -(Voxel::<T>::DZ as isize);
-
+impl Side for Front {
     const SIDE: usize = 4;
-
     const DX: isize = 0;
     const DY: isize = 0;
     const DZ: isize = -1;
 
-    fn accept(_: usize, _: usize, z: usize) -> bool {
+    fn offset<T: Data>() -> isize {
+        -(Voxel::<T>::DZ as isize)
+    }
+
+    fn accept<T: Data>(_: usize, _: usize, z: usize) -> bool {
         z > 0
     }
 
