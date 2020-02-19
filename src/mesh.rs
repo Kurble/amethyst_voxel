@@ -16,7 +16,7 @@ use crate::material::*;
 use crate::model::*;
 use crate::pass::*;
 use crate::triangulate::Mesh;
-use crate::voxel::{Data, Voxel, VoxelMarker};
+use crate::voxel::{Data, NestedVoxel, Voxel};
 use crate::world::VoxelWorld;
 
 use std::collections::HashMap;
@@ -32,7 +32,7 @@ pub struct VoxelMesh {
 
 /// A component that manages a dynamic voxelmesh
 pub struct DynamicVoxelMesh<T: Data> {
-    pub(crate) data: Voxel<T>,
+    pub(crate) data: NestedVoxel<T>,
     pub(crate) atlas: Handle<Atlas>,
     pub(crate) transform: Mat4x4,
     pub(crate) parent: Option<(Entity, [isize; 3])>,
@@ -40,7 +40,7 @@ pub struct DynamicVoxelMesh<T: Data> {
 }
 
 pub struct DynamicVoxelMeshData<T: Data> {
-    pub data: Voxel<T>,
+    pub data: NestedVoxel<T>,
     pub atlas: Handle<Atlas>,
 }
 
@@ -96,11 +96,11 @@ impl<T: Data> Component for DynamicVoxelMesh<T> {
 
 impl<T: Data> DynamicVoxelMesh<T> {
     /// Create a new `DynamicVoxelMesh` component.
-    pub fn new(value: Voxel<T>, atlas: Handle<Atlas>) -> Self {
+    pub fn new(value: NestedVoxel<T>, atlas: Handle<Atlas>) -> Self {
         DynamicVoxelMesh {
             data: value,
             atlas,
-            transform: Mat4x4::identity().scale(Voxel::<T>::WIDTH as f32),
+            transform: Mat4x4::identity().scale(NestedVoxel::<T>::WIDTH as f32),
             parent: None,
             dirty: true,
         }
@@ -112,9 +112,9 @@ impl<T: Data> DynamicVoxelMesh<T> {
         I: IntoIterator<Item = T::Child>,
     {
         DynamicVoxelMesh {
-            data: Voxel::from_iter(data, iter),
+            data: NestedVoxel::from_iter(data, iter),
             atlas,
-            transform: Mat4x4::identity().scale(Voxel::<T>::WIDTH as f32),
+            transform: Mat4x4::identity().scale(NestedVoxel::<T>::WIDTH as f32),
             parent: None,
             dirty: true,
         }
@@ -122,15 +122,15 @@ impl<T: Data> DynamicVoxelMesh<T> {
 }
 
 impl<T: Data> Deref for DynamicVoxelMesh<T> {
-    type Target = Voxel<T>;
+    type Target = NestedVoxel<T>;
 
-    fn deref(&self) -> &Voxel<T> {
+    fn deref(&self) -> &NestedVoxel<T> {
         &self.data
     }
 }
 
 impl<T: Data> DerefMut for DynamicVoxelMesh<T> {
-    fn deref_mut(&mut self) -> &mut Voxel<T> {
+    fn deref_mut(&mut self) -> &mut NestedVoxel<T> {
         self.dirty = true;
         &mut self.data
     }
@@ -287,7 +287,7 @@ fn build_voxel<V: Data>(
     model: &ModelData,
     submodel: &SubModelData,
     atlas: &mut AtlasData,
-) -> Voxel<V> {
+) -> NestedVoxel<V> {
     let mut materials_map = HashMap::new();
 
     let voxels = submodel
@@ -306,8 +306,8 @@ fn build_voxel<V: Data>(
         })
         .collect::<Vec<(usize, AtlasMaterialHandle)>>();
 
-    let mut detail: Vec<V::Child> = std::iter::repeat(VoxelMarker::new_empty(Default::default()))
-        .take(Voxel::<V>::COUNT)
+    let mut detail: Vec<V::Child> = std::iter::repeat(Voxel::new_empty(Default::default()))
+        .take(NestedVoxel::<V>::COUNT)
         .collect();
 
     for (index, material) in voxels {
@@ -316,13 +316,13 @@ fn build_voxel<V: Data>(
             (index / (submodel.dimensions[0] * submodel.dimensions[1])) % submodel.dimensions[2];
         let z = (index / submodel.dimensions[0]) % submodel.dimensions[1];
 
-        if x < Voxel::<V>::WIDTH && y < Voxel::<V>::WIDTH && z < Voxel::<V>::WIDTH {
-            detail[Voxel::<V>::coord_to_index(x, y, z)] =
-                VoxelMarker::new_filled(Default::default(), material);
+        if x < NestedVoxel::<V>::WIDTH && y < NestedVoxel::<V>::WIDTH && z < NestedVoxel::<V>::WIDTH {
+            detail[NestedVoxel::<V>::coord_to_index(x, y, z)] =
+                Voxel::new_filled(Default::default(), material);
         }
     }
 
-    Voxel::Detail {
+    NestedVoxel::Detail {
         data: Default::default(),
         detail: Arc::new(detail),
     }
@@ -336,7 +336,7 @@ fn build_mesh<'a, 'c, B, V, C, A, I>(
 ) -> Option<amethyst::renderer::types::Mesh>
 where
     B: Backend,
-    V: VoxelMarker,
+    V: Voxel,
     C: Context<V>,
     A: AtlasAccess,
     I: IntoIterator<Item = (&'a V, C, &'a Mat4x4)>,

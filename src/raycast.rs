@@ -1,7 +1,7 @@
 use nalgebra_glm::*;
 use std::ops::{Deref, DerefMut};
 
-use crate::voxel::{Data, Voxel, VoxelMarker};
+use crate::voxel::{Data, NestedVoxel, Voxel};
 use crate::world::VoxelWorldAccess;
 
 /// A ray that can be used to perform raycasting on a specific type that implements `Raycast`.
@@ -97,7 +97,7 @@ impl<'a, 'b, V: Data> RaycastBase for VoxelWorldAccess<'a, 'b, V> {
 }
 
 impl<'a, 'b, V: Data> Raycast for VoxelWorldAccess<'a, 'b, V> {
-    type Child = Voxel<V>;
+    type Child = NestedVoxel<V>;
 
     fn cast(&self, ray: &Ray) -> Option<Intersection> {
         let origin = vec3(
@@ -178,7 +178,7 @@ impl<'a, 'b, V: Data> Raycast for VoxelWorldAccess<'a, 'b, V> {
     }
 }
 
-impl<T: VoxelMarker> Raycast for T {
+impl<T: Voxel> Raycast for T {
     type Child = <T::Data as Data>::Child;
 
     fn cast(&self, ray: &Ray) -> Option<Intersection> {
@@ -210,7 +210,7 @@ impl<T: VoxelMarker> Raycast for T {
             ray,
             current,
             current_direction,
-            6 * Voxel::<T::Data>::WIDTH,
+            6 * T::WIDTH,
         )
         .map(|mut intersection| {
             let mut pos = vec3_to_vec4(&intersection.position) / scale;
@@ -229,15 +229,15 @@ impl<T: VoxelMarker> Raycast for T {
         normal: Vec3,
     ) -> Option<Intersection> {
         if (0..3).fold(true, |b, i| {
-            b && coord[i] >= 0 && coord[i] < Voxel::<T::Data>::WIDTH as isize
+            b && coord[i] >= 0 && coord[i] < T::WIDTH as isize
         }) {
             let i = coord[0] as usize
-                + coord[1] as usize * Voxel::<T::Data>::DY
-                + coord[2] as usize * Voxel::<T::Data>::DZ;
+                + coord[1] as usize * T::DY
+                + coord[2] as usize * T::DZ;
             if let Some(voxel) = self.get(i) {
                 if voxel.visible() {
                     if voxel.is_detail() {
-                        let sc = Voxel::<T::Data>::SCALE;
+                        let sc = T::SCALE;
                         let s = scaling(&vec3(sc, sc, sc));
                         let t = translation(&vec3(
                             coord[0] as f32 * sc,

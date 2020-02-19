@@ -4,14 +4,36 @@ use std::sync::Arc;
 
 use nalgebra_glm::Vec3;
 
-use crate::material::AtlasMaterialHandle;
-use crate::triangulate::Mesh;
-use crate::context::Context;
-use crate::side::Side;
 use crate::ambient_occlusion::AmbientOcclusion;
+use crate::context::Context;
+use crate::material::AtlasMaterialHandle;
+use crate::side::Side;
+use crate::triangulate::Mesh;
 
-pub trait VoxelMarker: 'static + Clone + Send + Sync {
+pub trait Voxel: 'static + Clone + Send + Sync {
     type Data: Data;
+
+    const WIDTH: usize = 1 << <Self::Data as Data>::SUBDIV;
+    const AO_WIDTH: usize = Self::WIDTH + 1;
+    const LAST: usize = Self::WIDTH - 1;
+    const COUNT: usize = Self::WIDTH * Self::WIDTH * Self::WIDTH;
+    const DX: usize = 1;
+    const DY: usize = Self::DX * Self::WIDTH;
+    const DZ: usize = Self::DY * Self::WIDTH;
+    const SCALE: f32 = 1.0 / Self::WIDTH as f32;
+
+    /// Convert a coordinate in the format (x, y, z) to an array index
+    fn coord_to_index(x: usize, y: usize, z: usize) -> usize {
+        x * Self::DX + y * Self::DY + z * Self::DZ
+    }
+
+    /// Convert an array index to a coordinate in the format (x, y, z)
+    fn index_to_coord(index: usize) -> (usize, usize, usize) {
+        let x = index & Self::LAST;
+        let y = (index >> <Self::Data as Data>::SUBDIV) & Self::LAST;
+        let z = (index >> (<Self::Data as Data>::SUBDIV * 2)) & Self::LAST;
+        (x, y, z)
+    }
 
     /// Construct a new, empty voxel.
     fn new_empty(data: Self::Data) -> Self;
@@ -51,7 +73,7 @@ pub trait Data: 'static + Default + Clone + Send + Sync {
     /// A value of 4 means that 2^4=16 subvoxels would be created at every axis, for a total of 16^3=4096 subvoxels.
     const SUBDIV: usize;
 
-    type Child: VoxelMarker;
+    type Child: Voxel;
 
     /// Informs the triangulator whether the voxel that owns this data should be considered
     ///  as a solid voxel or not.
@@ -68,11 +90,11 @@ pub trait Data: 'static + Default + Clone + Send + Sync {
 }
 
 #[allow(type_alias_bounds)]
-pub type ChildOf<T: VoxelMarker> = <T::Data as Data>::Child;
+pub type ChildOf<T: Voxel> = <T::Data as Data>::Child;
 
 /// A single voxel with nesting capability.
 #[derive(Clone)]
-pub enum Voxel<T: Data> {
+pub enum NestedVoxel<T: Data> {
     /// An empty voxel, air for example.
     Empty {
         /// User data for the voxel
@@ -102,90 +124,124 @@ pub enum Voxel<T: Data> {
     Placeholder,
 }
 
-impl<T: Data> Voxel<T> {
-    pub const WIDTH: usize = 1 << T::SUBDIV;
-    pub const AO_WIDTH: usize = Self::WIDTH + 1;
-    pub const LAST: usize = Self::WIDTH - 1;
-    pub const COUNT: usize = Self::WIDTH * Self::WIDTH * Self::WIDTH;
-    pub const DX: usize = 1;
-    pub const DY: usize = Self::DX * Self::WIDTH;
-    pub const DZ: usize = Self::DY * Self::WIDTH;
-    pub const SCALE: f32 = 1.0 / Self::WIDTH as f32;
+#[derive(Clone)]
+pub struct SimpleVoxel {
+    material: Option<AtlasMaterialHandle>,
+}
 
-    /// Convert a coordinate in the format (x, y, z) to an array index
-    pub fn coord_to_index(x: usize, y: usize, z: usize) -> usize {
-        x * Self::DX + y * Self::DY + z * Self::DZ
+impl Data for () {
+    type Child = SimpleVoxel;
+    const SUBDIV: usize = 0;
+}
+
+impl Voxel for SimpleVoxel {
+    type Data = ();
+
+    fn new_empty(_: ()) -> Self {
+        Self { material: None }
     }
 
-    /// Convert an array index to a coordinate in the format (x, y, z)
-    pub fn index_to_coord(index: usize) -> (usize, usize, usize) {
-        let x = index & Self::LAST;
-        let y = (index >> T::SUBDIV) & Self::LAST;
-        let z = (index >> (T::SUBDIV * 2)) & Self::LAST;
-        (x, y, z)
+    fn new_filled(_: (), material: AtlasMaterialHandle) -> Self {
+        Self { material: Some(material) }
     }
 
+    fn get(&self, _: usize) -> Option<&<Self::Data as Data>::Child> {
+        None
+    }
+
+    fn get_mut(&mut self, _: usize) -> Option<&mut <Self::Data as Data>::Child> {
+        None
+    }
+
+    fn visible(&self) -> bool {
+        self.material.is_some()
+    }
+
+    fn render(&self) -> bool {
+        self.material.is_none()
+    }
+
+    fn is_detail(&self) -> bool {
+        false
+    }
+
+    fn triangulate<'a, S: Side, C: Context<Self>>(
+        &self,
+        mesh: &mut Mesh,
+        ao: &AmbientOcclusion,
+        _: C,
+        origin: Vec3,
+        scale: f32,
+    ) {
+        use crate::triangulate::*;
+        if let Some(material) = self.material {
+            triangulate_face::<(), S>(mesh, ao, origin, scale, material);
+        }
+    }
+}
+
+impl<T: Data> NestedVoxel<T> {
     /// Construct a Voxel::Detail from an iterator.
     pub fn from_iter<I>(data: T, iter: I) -> Self
     where
         I: IntoIterator<Item = T::Child>,
     {
-        Voxel::Detail {
+        Self::Detail {
             data,
             detail: Arc::new(Vec::from_iter(iter.into_iter().take(Self::COUNT))),
         }
     }
 }
 
-impl<T: Data> VoxelMarker for Voxel<T> {
+impl<T: Data> Voxel for NestedVoxel<T> {
     type Data = T;
 
     fn new_empty(data: Self::Data) -> Self {
-        Voxel::Empty { data }
+        Self::Empty { data }
     }
 
     fn new_filled(data: Self::Data, material: AtlasMaterialHandle) -> Self {
-        Voxel::Material { data, material }
+        Self::Material { data, material }
     }
 
     fn get(&self, index: usize) -> Option<&<T as Data>::Child> {
         match *self {
-            Voxel::Empty { .. } => None,
-            Voxel::Detail { ref detail, .. } => detail.get(index),
-            Voxel::Material { .. } => None,
-            Voxel::Placeholder => None,
+            Self::Empty { .. } => None,
+            Self::Detail { ref detail, .. } => detail.get(index),
+            Self::Material { .. } => None,
+            Self::Placeholder => None,
         }
     }
 
     fn get_mut(&mut self, index: usize) -> Option<&mut <T as Data>::Child> {
         match *self {
-            Voxel::Empty { .. } => None,
-            Voxel::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
-            Voxel::Material { .. } => None,
-            Voxel::Placeholder => None,
+            Self::Empty { .. } => None,
+            Self::Detail { ref mut detail, .. } => Arc::make_mut(detail).get_mut(index),
+            Self::Material { .. } => None,
+            Self::Placeholder => None,
         }
     }
 
     fn visible(&self) -> bool {
         match *self {
-            Voxel::Empty { .. } => false,
-            Voxel::Detail { ref data, .. } => !data.empty(),
-            Voxel::Material { .. } => true,
-            Voxel::Placeholder => false,
+            Self::Empty { .. } => false,
+            Self::Detail { ref data, .. } => !data.empty(),
+            Self::Material { .. } => true,
+            Self::Placeholder => false,
         }
     }
 
     fn render(&self) -> bool {
         match *self {
-            Voxel::Empty { .. } => true,
-            Voxel::Detail { ref data, .. } => !data.solid(),
-            Voxel::Material { .. } => false,
-            Voxel::Placeholder => true,
+            Self::Empty { .. } => true,
+            Self::Detail { ref data, .. } => !data.solid(),
+            Self::Material { .. } => false,
+            Self::Placeholder => true,
         }
     }
 
     fn is_detail(&self) -> bool {
-        if let Voxel::Detail { .. } = self {
+        if let Self::Detail { .. } = self {
             true
         } else {
             false
@@ -202,65 +258,63 @@ impl<T: Data> VoxelMarker for Voxel<T> {
     ) {
         use crate::triangulate::*;
         match *self {
-            Voxel::Empty { .. } => (),
+            Self::Empty { .. } => (),
 
-            Voxel::Detail { ref detail, .. } => {
-                triangulate_detail::<Self, S, C>(
-                    mesh,
-                    ao,
-                    context,
-                    origin,
-                    scale,
-                    detail.as_slice(),
-                )
-            }
+            Self::Detail { ref detail, .. } => triangulate_detail::<Self, S, C>(
+                mesh,
+                ao,
+                context,
+                origin,
+                scale,
+                detail.as_slice(),
+            ),
 
-            Voxel::Material { material, .. } => {
+            Self::Material { material, .. } => {
                 triangulate_face::<T, S>(mesh, ao, origin, scale, material)
             }
 
-            Voxel::Placeholder => (),
+            Self::Placeholder => (),
         }
     }
 }
 
-impl<T: Data + Default> From<AtlasMaterialHandle> for Voxel<T> {
-    fn from(material: AtlasMaterialHandle) -> Voxel<T> {
-        Voxel::Material {
+impl<T: Data> From<AtlasMaterialHandle> for NestedVoxel<T> {
+    fn from(material: AtlasMaterialHandle) -> Self {
+        Self::Material {
             data: Default::default(),
             material,
         }
     }
 }
 
-impl<T: Data + Default> Default for Voxel<T> {
-    fn default() -> Voxel<T> {
-        Voxel::Empty {
+impl<T: Data> Default for NestedVoxel<T> {
+    fn default() -> Self {
+        Self::Empty {
             data: Default::default(),
         }
     }
 }
 
-impl<T: Data> Deref for Voxel<T> {
+impl<T: Data> Deref for NestedVoxel<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
         match *self {
-            Voxel::Empty { ref data, .. }
-            | Voxel::Detail { ref data, .. }
-            | Voxel::Material { ref data, .. } => data,
-            Voxel::Placeholder => panic!("Placeholder dereferenced"),
+            Self::Empty { ref data, .. }
+            | Self::Detail { ref data, .. }
+            | Self::Material { ref data, .. } => data,
+            Self::Placeholder => panic!("Placeholder dereferenced"),
         }
     }
 }
 
-impl<T: Data> DerefMut for Voxel<T> {
+impl<T: Data> DerefMut for NestedVoxel<T> {
     fn deref_mut(&mut self) -> &mut T {
         match *self {
-            Voxel::Empty { ref mut data, .. }
-            | Voxel::Detail { ref mut data, .. }
-            | Voxel::Material { ref mut data, .. } => data,
-            Voxel::Placeholder => panic!("Placeholder dereferenced"),
+            Self::Empty { ref mut data, .. }
+            | Self::Detail { ref mut data, .. }
+            | Self::Material { ref mut data, .. } => data,
+            Self::Placeholder => panic!("Placeholder dereferenced"),
         }
     }
 }

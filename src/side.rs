@@ -1,4 +1,4 @@
-use crate::voxel::{Data, Voxel};
+use crate::voxel::{Voxel};
 use nalgebra_glm::{Mat3, Vec3};
 
 pub trait Side {
@@ -7,9 +7,9 @@ pub trait Side {
     const DY: isize;
     const DZ: isize;
 
-    fn offset<T: Data>() -> isize;
+    fn offset<T: Voxel>() -> isize;
 
-    fn accept<T: Data>(x: usize, y: usize, z: usize) -> bool;
+    fn accept<T: Voxel>(x: usize, y: usize, z: usize) -> bool;
 
     fn orientation() -> Mat3;
 }
@@ -22,12 +22,12 @@ impl Side for Left {
     const DY: isize = 0;
     const DZ: isize = 0;
 
-    fn offset<T: Data>() -> isize { 
-        Voxel::<T>::DX as isize 
+    fn offset<T: Voxel>() -> isize { 
+        T::DX as isize 
     }
 
-    fn accept<T: Data>(x: usize, _: usize, _: usize) -> bool {
-        x < Voxel::<T>::LAST
+    fn accept<T: Voxel>(x: usize, _: usize, _: usize) -> bool {
+        x < T::LAST
     }
 
     fn orientation() -> Mat3 {
@@ -47,11 +47,11 @@ impl Side for Right {
     const DY: isize = 0;
     const DZ: isize = 0;
 
-    fn offset<T: Data>() -> isize {
-        -(Voxel::<T>::DX as isize)
+    fn offset<T: Voxel>() -> isize {
+        -(T::DX as isize)
     }
 
-    fn accept<T: Data>(x: usize, _: usize, _: usize) -> bool {
+    fn accept<T: Voxel>(x: usize, _: usize, _: usize) -> bool {
         x > 0
     }
 
@@ -72,12 +72,12 @@ impl Side for Below {
     const DY: isize = 1;
     const DZ: isize = 0;
 
-    fn offset<T: Data>() -> isize {
-        Voxel::<T>::DY as isize
+    fn offset<T: Voxel>() -> isize {
+        T::DY as isize
     }
 
-    fn accept<T: Data>(_: usize, y: usize, _: usize) -> bool {
-        y < Voxel::<T>::LAST
+    fn accept<T: Voxel>(_: usize, y: usize, _: usize) -> bool {
+        y < T::LAST
     }
 
     fn orientation() -> Mat3 {
@@ -97,11 +97,11 @@ impl Side for Above {
     const DY: isize = -1;
     const DZ: isize = 0;
 
-    fn offset<T: Data>() -> isize {
-        -(Voxel::<T>::DY as isize)
+    fn offset<T: Voxel>() -> isize {
+        -(T::DY as isize)
     }
 
-    fn accept<T: Data>(_: usize, y: usize, _: usize) -> bool {
+    fn accept<T: Voxel>(_: usize, y: usize, _: usize) -> bool {
         y > 0
     }
 
@@ -122,12 +122,12 @@ impl Side for Back {
     const DY: isize = 0;
     const DZ: isize = 1;
 
-    fn offset<T: Data>() -> isize {
-        Voxel::<T>::DZ as isize
+    fn offset<T: Voxel>() -> isize {
+        T::DZ as isize
     }
 
-    fn accept<T: Data>(_: usize, _: usize, z: usize) -> bool {
-        z < Voxel::<T>::LAST
+    fn accept<T: Voxel>(_: usize, _: usize, z: usize) -> bool {
+        z < T::LAST
     }
 
     fn orientation() -> Mat3 {
@@ -147,11 +147,11 @@ impl Side for Front {
     const DY: isize = 0;
     const DZ: isize = -1;
 
-    fn offset<T: Data>() -> isize {
-        -(Voxel::<T>::DZ as isize)
+    fn offset<T: Voxel>() -> isize {
+        -(T::DZ as isize)
     }
 
-    fn accept<T: Data>(_: usize, _: usize, z: usize) -> bool {
+    fn accept<T: Voxel>(_: usize, _: usize, z: usize) -> bool {
         z > 0
     }
 

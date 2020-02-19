@@ -1,11 +1,11 @@
 use crate::mesh::DynamicVoxelMesh;
-use crate::voxel::{Data, Voxel, VoxelMarker, ChildOf};
+use crate::voxel::{Data, NestedVoxel, Voxel, ChildOf};
 use crate::world::VoxelWorld;
 
 use amethyst::core::ecs::storage::GenericReadStorage;
 
 /// Trait for retrieving neighbour information between separate root voxels.
-pub trait Context<T: VoxelMarker>: Clone {
+pub trait Context<T: Voxel>: Clone {
     /// Same as Triangulate::visible, but accepts a relative coordinate for selecting a child voxel.
     fn visible(&self, x: isize, y: isize, z: isize) -> bool;
 
@@ -23,13 +23,13 @@ pub trait Context<T: VoxelMarker>: Clone {
 
 /// Context sampling no neighbours at all.
 #[derive(Clone)]
-pub struct VoxelContext<'a, T: VoxelMarker> {
+pub struct VoxelContext<'a, T: Voxel> {
     voxel: &'a T,
 }
 
 /// Context sampling the inner details of a voxel. Neighbours resolve through the parent Context.
 #[derive(Clone)]
-pub struct DetailContext<'a, P: VoxelMarker, Q: Context<P>> {
+pub struct DetailContext<'a, P: Voxel, Q: Context<P>> {
     parent: &'a Q,
     coord: [isize; 3],
     voxel: Option<&'a ChildOf<P>>,
@@ -42,24 +42,24 @@ pub struct WorldContext<'a, V: Data, S: 'a + GenericReadStorage<Component = Dyna
     chunks: &'a S,
 }
 
-impl<'a, T: VoxelMarker> VoxelContext<'a, T> {
+impl<'a, T: Voxel> VoxelContext<'a, T> {
     pub fn new(voxel: &'a T) -> Self {
         Self { voxel }
     }
 }
 
-impl<'a, T: VoxelMarker> Context<T> for VoxelContext<'a, T> {
+impl<'a, T: Voxel> Context<T> for VoxelContext<'a, T> {
     fn visible(&self, _: isize, _: isize, _: isize) -> bool {
         false
     }
 
     fn render(&self, x: isize, y: isize, z: isize) -> bool {
         if x >= 0
-            && x < Voxel::<T::Data>::WIDTH as isize
+            && x < T::WIDTH as isize
             && y >= 0
-            && y < Voxel::<T::Data>::WIDTH as isize
+            && y < T::WIDTH as isize
             && z >= 0
-            && z < Voxel::<T::Data>::WIDTH as isize
+            && z < T::WIDTH as isize
         {
             false
         } else {
@@ -74,13 +74,13 @@ impl<'a, T: VoxelMarker> Context<T> for VoxelContext<'a, T> {
         z: isize,
     ) -> DetailContext<'b, T, Self> {
         if x >= 0
-            && x < Voxel::<T::Data>::WIDTH as isize
+            && x < T::WIDTH as isize
             && y >= 0
-            && y < Voxel::<T::Data>::WIDTH as isize
+            && y < T::WIDTH as isize
             && z >= 0
-            && z < Voxel::<T::Data>::WIDTH as isize
+            && z < T::WIDTH as isize
         {
-            let index = Voxel::<T::Data>::coord_to_index(x as usize, y as usize, z as usize);
+            let index = T::coord_to_index(x as usize, y as usize, z as usize);
             DetailContext::new(self, [x, y, z], self.voxel.get(index))
         } else {
             DetailContext::new(self, [x, y, z], None)
@@ -88,7 +88,7 @@ impl<'a, T: VoxelMarker> Context<T> for VoxelContext<'a, T> {
     }
 }
 
-impl<'a, P: VoxelMarker, Q: Context<P>> DetailContext<'a, P, Q> {
+impl<'a, P: Voxel, Q: Context<P>> DetailContext<'a, P, Q> {
     pub fn new(parent: &'a Q, coord: [isize; 3], voxel: Option<&'a ChildOf<P>>) -> Self {
         Self {
             parent,
@@ -98,14 +98,14 @@ impl<'a, P: VoxelMarker, Q: Context<P>> DetailContext<'a, P, Q> {
     }
 
     fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a ChildOf<ChildOf<P>>> {
-        let size = Voxel::<<ChildOf<P> as VoxelMarker>::Data>::WIDTH as isize;
+        let size = ChildOf::<P>::WIDTH as isize;
         let coord = [x, y, z];
         if (0..3).fold(true, |b, i| b && coord[i] >= 0 && coord[i] < size) {
             self.voxel.and_then(|v| {
                 v.get(
-                    x as usize * Voxel::<<ChildOf<P> as VoxelMarker>::Data>::DX
-                        + y as usize * Voxel::<<ChildOf<P> as VoxelMarker>::Data>::DY
-                        + z as usize * Voxel::<<ChildOf<P> as VoxelMarker>::Data>::DZ,
+                    x as usize * ChildOf::<P>::DX
+                        + y as usize * ChildOf::<P>::DY
+                        + z as usize * ChildOf::<P>::DZ,
                 )
             })
         } else {
@@ -129,7 +129,7 @@ impl<'a, P: VoxelMarker, Q: Context<P>> DetailContext<'a, P, Q> {
     }
 }
 
-impl<'a, P: VoxelMarker, Q: Context<P>> Context<ChildOf<P>> for DetailContext<'a, P, Q> {
+impl<'a, P: Voxel, Q: Context<P>> Context<ChildOf<P>> for DetailContext<'a, P, Q> {
     fn visible(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|v| v.visible()).unwrap_or(false)
     }
@@ -157,7 +157,7 @@ where
     }
 
     fn find(&self, x: isize, y: isize, z: isize) -> Option<&'a V::Child> {
-        let size = Voxel::<V>::WIDTH as isize;
+        let size = NestedVoxel::<V>::WIDTH as isize;
         let grid = |x| if x >= 0 { x / size } else { (x + 1) / size - 1 };
         let coord = [
             self.coord[0] + grid(x),
@@ -176,9 +176,9 @@ where
             {
                 let grid_mod = |x: isize| if x%size >= 0 { x%size } else { x%size + size } as usize;
                 voxel.get(
-                    grid_mod(x) * Voxel::<V>::DX
-                        + grid_mod(y) * Voxel::<V>::DY
-                        + grid_mod(z) * Voxel::<V>::DZ,
+                    grid_mod(x) * NestedVoxel::<V>::DX
+                        + grid_mod(y) * NestedVoxel::<V>::DY
+                        + grid_mod(z) * NestedVoxel::<V>::DZ,
                 )
             } else {
                 None
@@ -189,7 +189,7 @@ where
     }
 }
 
-impl<'a, V, S> Context<Voxel<V>> for WorldContext<'a, V, S>
+impl<'a, V, S> Context<NestedVoxel<V>> for WorldContext<'a, V, S>
 where
     V: Data,
     S: 'a + GenericReadStorage<Component = DynamicVoxelMesh<V>>,
@@ -202,7 +202,7 @@ where
         self.find(x, y, z).map(|c| c.render()).unwrap_or(false)
     }
 
-    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, Voxel<V>, Self> {
+    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, NestedVoxel<V>, Self> {
         DetailContext::new(self, [x, y, z], self.find(x, y, z))
     }
 }

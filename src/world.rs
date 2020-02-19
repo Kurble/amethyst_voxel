@@ -42,8 +42,8 @@ pub struct VoxelWorldAccess<'a, 'b, T: Data> {
 }
 
 pub enum VoxelSourceResult<T: Data> {
-    Ok(Voxel<T>),
-    Loading(Box<dyn FnOnce() -> Voxel<T> + Send>),
+    Ok(NestedVoxel<T>),
+    Loading(Box<dyn FnOnce() -> NestedVoxel<T> + Send>),
     Retry,
 }
 
@@ -65,7 +65,7 @@ pub trait VoxelSource<'s, T: Data>: Send + Sync {
         &mut self,
         _system_data: &mut Self::SystemData,
         _coord: [isize; 3],
-        _voxel: Voxel<T>,
+        _voxel: NestedVoxel<T>,
     ) -> Box<dyn FnOnce() + Send> {
         Box::new(|| ())
     }
@@ -92,7 +92,7 @@ pub struct Limits {
 
 pub(crate) enum Chunk<T: Data> {
     NotNeeded,
-    NotReady(Arc<AtomicCell<Option<Voxel<T>>>>),
+    NotReady(Arc<AtomicCell<Option<NestedVoxel<T>>>>),
     Ready(Entity),
 }
 
@@ -122,7 +122,7 @@ impl<T: Data> VoxelWorld<T> {
         &self,
         mut coord: [isize; 3],
         chunks: &'a R,
-    ) -> Option<&'a Voxel<T>> {
+    ) -> Option<&'a NestedVoxel<T>> {
         for i in 0..3 {
             coord[i] -= self.origin[i];
             if coord[i] < 0 || coord[i] >= self.dims[i] as isize {
@@ -144,7 +144,7 @@ impl<T: Data> VoxelWorld<T> {
         &self,
         mut coord: [isize; 3],
         chunks: &'a mut W,
-    ) -> Option<&'a mut Voxel<T>> {
+    ) -> Option<&'a mut NestedVoxel<T>> {
         for i in 0..3 {
             coord[i] -= self.origin[i];
             if coord[i] < 0 || coord[i] >= self.dims[i] as isize {
@@ -180,11 +180,11 @@ impl<'a, 'b, V: Data> VoxelWorldAccess<'a, 'b, V> {
         Self { world, chunks }
     }
 
-    pub fn get(&self, coord: [isize; 3]) -> Option<&Voxel<V>> {
+    pub fn get(&self, coord: [isize; 3]) -> Option<&NestedVoxel<V>> {
         self.world.get(coord, self.chunks)
     }
 
-    pub fn get_mut(&mut self, coord: [isize; 3]) -> Option<&mut Voxel<V>> {
+    pub fn get_mut(&mut self, coord: [isize; 3]) -> Option<&mut NestedVoxel<V>> {
         self.world.get_mut(coord, self.chunks)
     }
 }
@@ -421,7 +421,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                 let coord = [x + origin[0], y + origin[1], z + origin[2]];
                                 let voxel = replace(
                                     meshes.get_mut(entity).unwrap().deref_mut(),
-                                    Voxel::Placeholder,
+                                    NestedVoxel::Placeholder,
                                 );
                                 entities.delete(entity).expect("Remove chunk entity failed");
                                 let job = source.drop_voxel(&mut source_data, coord, voxel);

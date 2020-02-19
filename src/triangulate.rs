@@ -26,7 +26,7 @@ pub struct Mesh {
 
 impl Mesh {
     /// Create a new mesh
-    pub fn build<'a, T: VoxelMarker, C: Context<T>>(
+    pub fn build<'a, T: Voxel, C: Context<T>>(
         &mut self,
         root: &T,
         ao: &AmbientOcclusion,
@@ -51,22 +51,22 @@ pub fn triangulate_detail<'a, T, S, C>(
     scale: f32,
     sub: &[ChildOf<T>],
 ) where
-    T: VoxelMarker,
+    T: Voxel,
     S: Side,
     C: Context<T>,
 {
     // the scale of a single sub-voxel
-    let scale = scale * Voxel::<T::Data>::SCALE;
+    let scale = scale * T::SCALE;
     // loop over all sub-voxels and check for visible faces
-    for i in 0..Voxel::<T::Data>::COUNT {
+    for i in 0..T::COUNT {
         if sub[i].visible() {
-            let x = (i) & Voxel::<T::Data>::LAST;
-            let y = (i >> <T::Data as Data>::SUBDIV) & Voxel::<T::Data>::LAST;
-            let z = (i >> (<T::Data as Data>::SUBDIV * 2)) & Voxel::<T::Data>::LAST;
-            let j = (i as isize + S::offset::<T::Data>()) as usize;
+            let x = (i) & T::LAST;
+            let y = (i >> <T::Data as Data>::SUBDIV) & T::LAST;
+            let z = (i >> (<T::Data as Data>::SUBDIV * 2)) & T::LAST;
+            let j = (i as isize + S::offset::<T>()) as usize;
 
             if sub[i].render()
-                || (S::accept::<T::Data>(x, y, z) && sub[j].render())
+                || (S::accept::<T>(x, y, z) && sub[j].render())
                 || context.render(x as isize + S::DX, y as isize + S::DY, z as isize + S::DZ)
             {
                 let ao = &ao.sub(x, y, z);

@@ -1,6 +1,6 @@
 use crate::context::Context;
 use crate::side::Side;
-use crate::voxel::{Data, Voxel, VoxelMarker};
+use crate::voxel::{Data, Voxel};
 use std::collections::HashMap;
 
 pub enum AmbientOcclusion<'a> {
@@ -18,10 +18,10 @@ pub enum AmbientOcclusion<'a> {
 }
 
 impl AmbientOcclusion<'_> {
-    pub fn build<'a, T: VoxelMarker, C: Context<T>>(root: &T, neighbours: C) -> Self {
-        let w = Voxel::<T::Data>::AO_WIDTH as isize;
+    pub fn build<'a, T: Voxel, C: Context<T>>(root: &T, neighbours: C) -> Self {
+        let w = T::AO_WIDTH as isize;
         if root.is_detail() {
-            let bound = |x| x < 0 || x > Voxel::<T::Data>::LAST as isize;
+            let bound = |x| x < 0 || x > T::LAST as isize;
             let sample = |x, y, z| {
                 if bound(x) || bound(y) || bound(z) {
                     if neighbours.visible(x, y, z) {
@@ -30,7 +30,7 @@ impl AmbientOcclusion<'_> {
                         0
                     }
                 } else if root
-                    .get(Voxel::<T::Data>::coord_to_index(
+                    .get(T::coord_to_index(
                         x as usize, y as usize, z as usize,
                     ))
                     .unwrap()
@@ -79,11 +79,11 @@ impl AmbientOcclusion<'_> {
 
             AmbientOcclusion::Big {
                 occlusion,
-                detail: (0..Voxel::<T::Data>::COUNT)
+                detail: (0..T::COUNT)
                     .filter_map(|index| {
                         root.get(index).and_then(|voxel| {
                             if voxel.is_detail() {
-                                let (x, y, z) = Voxel::<T::Data>::index_to_coord(index);
+                                let (x, y, z) = T::index_to_coord(index);
                                 Some((
                                     index,
                                     Self::build(
@@ -97,7 +97,7 @@ impl AmbientOcclusion<'_> {
                         })
                     })
                     .collect(),
-                width: Voxel::<T::Data>::AO_WIDTH,
+                width: T::AO_WIDTH,
             }
         } else {
             AmbientOcclusion::Small {

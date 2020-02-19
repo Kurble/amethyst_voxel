@@ -8,7 +8,7 @@ pub use crate::{
     prefab::{DynamicVoxelMeshPrefab, VoxelMeshPrefab},
     raycast::{Raycast, RaycastBase},
     vox::VoxFormat,
-    voxel::{Data, Voxel},
+    voxel::{Data, NestedVoxel},
     world::{Limits, VoxelSource, VoxelSourceResult, VoxelWorld, VoxelWorldAccess},
 };
 
