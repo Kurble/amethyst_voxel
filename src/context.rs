@@ -5,7 +5,7 @@ use crate::world::VoxelWorld;
 use amethyst::core::ecs::storage::GenericReadStorage;
 
 /// Trait for retrieving neighbour information between separate root voxels.
-pub trait Context<T: Voxel>: Clone {
+pub trait Context<T: Voxel> {
     /// Same as Triangulate::visible, but accepts a relative coordinate for selecting a child voxel.
     fn visible(&self, x: isize, y: isize, z: isize) -> bool;
 
@@ -18,7 +18,7 @@ pub trait Context<T: Voxel>: Clone {
         x: isize,
         y: isize,
         z: isize,
-    ) -> DetailContext<'a, T, Self>;
+    ) -> DetailContext<'a, T>;
 }
 
 /// Context sampling no neighbours at all.
@@ -29,8 +29,8 @@ pub struct VoxelContext<'a, T: Voxel> {
 
 /// Context sampling the inner details of a voxel. Neighbours resolve through the parent Context.
 #[derive(Clone)]
-pub struct DetailContext<'a, P: Voxel, Q: Context<P>> {
-    parent: &'a Q,
+pub struct DetailContext<'a, P: Voxel> {
+    parent: &'a dyn Context<P>,
     coord: [isize; 3],
     voxel: Option<&'a ChildOf<P>>,
 }
@@ -72,7 +72,7 @@ impl<'a, T: Voxel> Context<T> for VoxelContext<'a, T> {
         x: isize,
         y: isize,
         z: isize,
-    ) -> DetailContext<'b, T, Self> {
+    ) -> DetailContext<'b, T> {
         if x >= 0
             && x < T::WIDTH as isize
             && y >= 0
@@ -88,8 +88,8 @@ impl<'a, T: Voxel> Context<T> for VoxelContext<'a, T> {
     }
 }
 
-impl<'a, P: Voxel, Q: Context<P>> DetailContext<'a, P, Q> {
-    pub fn new(parent: &'a Q, coord: [isize; 3], voxel: Option<&'a ChildOf<P>>) -> Self {
+impl<'a, P: Voxel> DetailContext<'a, P> {
+    pub fn new(parent: &'a dyn Context<P>, coord: [isize; 3], voxel: Option<&'a ChildOf<P>>) -> Self {
         Self {
             parent,
             coord,
@@ -129,7 +129,7 @@ impl<'a, P: Voxel, Q: Context<P>> DetailContext<'a, P, Q> {
     }
 }
 
-impl<'a, P: Voxel, Q: Context<P>> Context<ChildOf<P>> for DetailContext<'a, P, Q> {
+impl<'a, P: Voxel> Context<ChildOf<P>> for DetailContext<'a, P> {
     fn visible(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|v| v.visible()).unwrap_or(false)
     }
@@ -138,7 +138,7 @@ impl<'a, P: Voxel, Q: Context<P>> Context<ChildOf<P>> for DetailContext<'a, P, Q
         self.find(x, y, z).map(|v| v.render()).unwrap_or(false)
     }
 
-    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, ChildOf<P>, Self> {
+    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, ChildOf<P>> {
         DetailContext::new(self, [x, y, z], self.find(x, y, z))
     }
 }
@@ -202,7 +202,7 @@ where
         self.find(x, y, z).map(|c| c.render()).unwrap_or(false)
     }
 
-    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, NestedVoxel<V>, Self> {
+    fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, NestedVoxel<V>> {
         DetailContext::new(self, [x, y, z], self.find(x, y, z))
     }
 }

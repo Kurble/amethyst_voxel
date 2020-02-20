@@ -61,7 +61,7 @@ pub trait Voxel: 'static + Clone + Send + Sync {
         &self,
         mesh: &mut Mesh,
         ao: &AmbientOcclusion,
-        context: C,
+        context: &C,
         origin: Vec3,
         scale: f32,
     );
@@ -169,7 +169,7 @@ impl Voxel for SimpleVoxel {
         &self,
         mesh: &mut Mesh,
         ao: &AmbientOcclusion,
-        _: C,
+        _: &C,
         origin: Vec3,
         scale: f32,
     ) {
@@ -252,7 +252,7 @@ impl<T: Data> Voxel for NestedVoxel<T> {
         &self,
         mesh: &mut Mesh,
         ao: &AmbientOcclusion,
-        context: C,
+        context: &C,
         origin: Vec3,
         scale: f32,
     ) {

@@ -48,10 +48,10 @@ pub trait Raycast {
     ) -> Option<Intersection>;
 
     /// Immutably retrieve the child for the casted ray.
-    fn get(&self, intersection: &Intersection) -> Option<&Self::Child>;
+    fn get_hit(&self, intersection: &Intersection) -> Option<&Self::Child>;
 
     /// Mutably retrieve the child for the casted ray.
-    fn get_mut(&mut self, ray: &Intersection) -> Option<&mut Self::Child>;
+    fn get_hit_mut(&mut self, ray: &Intersection) -> Option<&mut Self::Child>;
 
     /// Get the distance on the ray to the nearest hit.
     fn hit(&self, ray: &Ray) -> Option<f32> {
@@ -163,14 +163,14 @@ impl<'a, 'b, V: Data> Raycast for VoxelWorldAccess<'a, 'b, V> {
         None
     }
 
-    fn get(&self, intersection: &Intersection) -> Option<&Self::Child> {
+    fn get_hit(&self, intersection: &Intersection) -> Option<&Self::Child> {
         self.world.data[intersection.index]
             .get()
             .and_then(|e| self.chunks.get(e))
             .map(|c| c.deref())
     }
 
-    fn get_mut(&mut self, intersection: &Intersection) -> Option<&mut Self::Child> {
+    fn get_hit_mut(&mut self, intersection: &Intersection) -> Option<&mut Self::Child> {
         self.world.data[intersection.index]
             .get()
             .and_then(move |e| self.chunks.get_mut(e))
@@ -273,11 +273,11 @@ impl<T: Voxel> Raycast for T {
         None
     }
 
-    fn get(&self, intersection: &Intersection) -> Option<&<T::Data as Data>::Child> {
+    fn get_hit(&self, intersection: &Intersection) -> Option<&<T::Data as Data>::Child> {
         self.get(intersection.index)
     }
 
-    fn get_mut(&mut self, intersection: &Intersection) -> Option<&mut <T::Data as Data>::Child> {
+    fn get_hit_mut(&mut self, intersection: &Intersection) -> Option<&mut <T::Data as Data>::Child> {
         self.get_mut(intersection.index)
     }
 }

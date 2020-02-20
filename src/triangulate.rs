@@ -30,23 +30,23 @@ impl Mesh {
         &mut self,
         root: &T,
         ao: &AmbientOcclusion,
-        context: C,
+        context: &C,
         origin: Vec3,
         scale: f32,
     ) {
-        root.triangulate::<Left, C>(self, ao, context.clone(), origin, scale);
-        root.triangulate::<Right, C>(self, ao, context.clone(), origin, scale);
-        root.triangulate::<Below, C>(self, ao, context.clone(), origin, scale);
-        root.triangulate::<Above, C>(self, ao, context.clone(), origin, scale);
-        root.triangulate::<Back, C>(self, ao, context.clone(), origin, scale);
-        root.triangulate::<Front, C>(self, ao, context.clone(), origin, scale);
+        root.triangulate::<Left, C>(self, ao, context, origin, scale);
+        root.triangulate::<Right, C>(self, ao, context, origin, scale);
+        root.triangulate::<Below, C>(self, ao, context, origin, scale);
+        root.triangulate::<Above, C>(self, ao, context, origin, scale);
+        root.triangulate::<Back, C>(self, ao, context, origin, scale);
+        root.triangulate::<Front, C>(self, ao, context, origin, scale);
     }
 }
 
 pub fn triangulate_detail<'a, T, S, C>(
     mesh: &mut Mesh,
     ao: &'a AmbientOcclusion<'a>,
-    context: C,
+    context: &C,
     origin: Vec3,
     scale: f32,
     sub: &[ChildOf<T>],
@@ -78,7 +78,7 @@ pub fn triangulate_detail<'a, T, S, C>(
                 );
 
                 // add the visible face
-                sub[i].triangulate::<S, _>(mesh, ao, ctx, src, scale);
+                sub[i].triangulate::<S, _>(mesh, ao, &ctx, src, scale);
             }
         }
     }

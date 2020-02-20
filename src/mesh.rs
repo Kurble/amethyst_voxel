@@ -179,7 +179,7 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> 
                     build_mesh(
                         Some((
                             &dynamic_mesh.data,
-                            WorldContext::new(coord, world, &data.dynamic_mesh_storage),
+                            &WorldContext::new(coord, world, &data.dynamic_mesh_storage),
                             &dynamic_mesh.transform,
                         )),
                         atlas,
@@ -191,7 +191,7 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for TriangulatorSystem<B, V> 
                     build_mesh(
                         Some((
                             &dynamic_mesh.data,
-                            VoxelContext::new(&dynamic_mesh.data),
+                            &VoxelContext::new(&dynamic_mesh.data),
                             &dynamic_mesh.transform,
                         )),
                         atlas,
@@ -261,10 +261,16 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessor<B, V> 
                         })
                         .collect::<Vec<_>>();
 
+                    let context = voxels
+                        .iter()
+                        .map(|(_, voxel)| VoxelContext::new(voxel))
+                        .collect::<Vec<_>>();
+
                     let mesh = build_mesh(
                         voxels
                             .iter()
-                            .map(|(sub, voxel)| (voxel, VoxelContext::new(voxel), &sub.offset)),
+                            .zip(context.iter())
+                            .map(|((sub, voxel), context)| (voxel, context, &sub.offset)),
                         &atlas,
                         **queue_id,
                         factory,
@@ -337,16 +343,16 @@ fn build_mesh<'a, 'c, B, V, C, A, I>(
 where
     B: Backend,
     V: Voxel,
-    C: Context<V>,
+    C: Context<V> + 'c,
     A: AtlasAccess,
-    I: IntoIterator<Item = (&'a V, C, &'a Mat4x4)>,
+    I: IntoIterator<Item = (&'a V, &'c C, &'a Mat4x4)>,
 {
     let mut mesh = Mesh::default();
 
     for (voxel, context, transform) in iter {
-        let ao = AmbientOcclusion::build(voxel, context.clone());
+        let ao = AmbientOcclusion::build(voxel, context);
         let start = mesh.pos.len();
-        mesh.build::<V, C>(voxel, &ao, context.clone(), vec3(0.0, 0.0, 0.0), 1.0);
+        mesh.build::<V, C>(voxel, &ao, context, vec3(0.0, 0.0, 0.0), 1.0);
         for i in start..mesh.pos.len() {
             let pos: [f32; 3] = mesh.pos[i].0.into();
             let nml: [f32; 3] = mesh.nml[i].0.into();

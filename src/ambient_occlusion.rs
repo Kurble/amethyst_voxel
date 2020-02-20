@@ -18,7 +18,7 @@ pub enum AmbientOcclusion<'a> {
 }
 
 impl AmbientOcclusion<'_> {
-    pub fn build<'a, T: Voxel, C: Context<T>>(root: &T, neighbours: C) -> Self {
+    pub fn build<'a, T: Voxel, C: Context<T>>(root: &T, neighbours: &C) -> Self {
         let w = T::AO_WIDTH as isize;
         if root.is_detail() {
             let bound = |x| x < 0 || x > T::LAST as isize;
@@ -88,7 +88,7 @@ impl AmbientOcclusion<'_> {
                                     index,
                                     Self::build(
                                         voxel,
-                                        neighbours.child(x as isize, y as isize, z as isize),
+                                        &neighbours.child(x as isize, y as isize, z as isize),
                                     ),
                                 ))
                             } else {
