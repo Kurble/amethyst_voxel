@@ -234,14 +234,14 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
             mut source_data,
         ): Self::SystemData,
     ) {
-        let identity = Transform::default();
+        let identity_transform = Transform::default();
 
         let transform = active_camera
             .entity
             .as_ref()
             .and_then(|ac| transforms.get(*ac))
             .or_else(|| (&cameras, &transforms).join().next().map(|(_c, t)| t))
-            .unwrap_or(&identity);
+            .unwrap_or(&identity_transform);
 
         let center = {
             let m = transform.global_matrix().column(3).xyz();
@@ -352,6 +352,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                             coord[1] as f32 * world.scale,
                                             coord[2] as f32 * world.scale,
                                         ));
+                                        mesh.transform = identity();
                                         mesh.parent = Some((world_entity, [x, y, z]));
                                         meshes.insert(entity, mesh).ok();
                                         transforms.insert(entity, transform).ok();
@@ -403,6 +404,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                             coord[1] as f32 * world.scale,
                                             coord[2] as f32 * world.scale,
                                         ));
+                                        mesh.transform = identity();
                                         mesh.parent = Some((world_entity, [x, y, z]));
                                         meshes.insert(entity, mesh).ok();
                                         transforms.insert(entity, transform).ok();

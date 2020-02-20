@@ -100,7 +100,7 @@ impl<T: Data> DynamicVoxelMesh<T> {
         DynamicVoxelMesh {
             data: value,
             atlas,
-            transform: Mat4x4::identity().scale(NestedVoxel::<T>::WIDTH as f32),
+            transform: scale(&identity(), &(vec3(1.0, 1.0, 1.0) * NestedVoxel::<T>::WIDTH as f32)),
             parent: None,
             dirty: true,
         }
@@ -114,7 +114,7 @@ impl<T: Data> DynamicVoxelMesh<T> {
         DynamicVoxelMesh {
             data: NestedVoxel::from_iter(data, iter),
             atlas,
-            transform: Mat4x4::identity().scale(NestedVoxel::<T>::WIDTH as f32),
+            transform: scale(&identity(), &(vec3(1.0, 1.0, 1.0) * NestedVoxel::<T>::WIDTH as f32)),
             parent: None,
             dirty: true,
         }
@@ -352,7 +352,9 @@ where
     for (voxel, context, transform) in iter {
         let ao = AmbientOcclusion::build(voxel, context);
         let start = mesh.pos.len();
-        mesh.build::<V, C>(voxel, &ao, context, vec3(0.0, 0.0, 0.0), 1.0);
+
+        mesh.build(voxel, &ao, context, vec3(0.0, 0.0, 0.0), 1.0);
+
         for i in start..mesh.pos.len() {
             let pos: [f32; 3] = mesh.pos[i].0.into();
             let nml: [f32; 3] = mesh.nml[i].0.into();
