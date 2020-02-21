@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use nalgebra_glm::Vec3;
 
-use crate::ambient_occlusion::AmbientOcclusion;
+use crate::ambient_occlusion::SharedVertexData;
 use crate::context::Context;
 use crate::material::AtlasMaterialHandle;
 use crate::side::Side;
-use crate::triangulate::Mesh;
+use crate::triangulate::Triangulation;
 
 pub trait Voxel: 'static + Clone + Send + Sync {
     type Data: Data;
@@ -53,14 +53,17 @@ pub trait Voxel: 'static + Clone + Send + Sync {
     /// Returns whether the neighbours of this voxel are visible if the camera was inside this voxel.
     fn render(&self) -> bool;
 
+    /// Returns the skin binding for this voxel
+    fn skin(&self) -> Option<u8>;
+
     /// Whether this voxel has subvoxels.
     fn is_detail(&self) -> bool;
 
     /// Triangulate the voxel on a specific side
     fn triangulate<'a, S: Side, C: Context<Self>>(
         &self,
-        mesh: &mut Mesh,
-        ao: &AmbientOcclusion,
+        mesh: &mut Triangulation,
+        ao: &SharedVertexData,
         context: &C,
         origin: Vec3,
         scale: f32,
@@ -75,17 +78,19 @@ pub trait Data: 'static + Default + Clone + Send + Sync {
 
     type Child: Voxel;
 
-    /// Informs the triangulator whether the voxel that owns this data should be considered
-    ///  as a solid voxel or not.
-    /// A solid voxel is a voxel that can't be seen through in any way.
-    fn solid(&self) -> bool {
+    /// Returns whether this voxel is visible, i.e. if it has geometry.
+    fn visible(&self) -> bool {
+        true
+    }
+
+    /// Returns whether the neighbours of this voxel are visible if the camera was inside this voxel.
+    fn render(&self) -> bool {
         false
     }
 
-    /// Informs the triangulator whether the voxel that owns this data should be considered empty.
-    /// Empty voxels are not voxelized.
-    fn empty(&self) -> bool {
-        false
+    /// Returns the skin binding for this voxel
+    fn skin(&self) -> Option<u8> {
+        None
     }
 }
 
@@ -145,11 +150,11 @@ impl Voxel for SimpleVoxel {
         Self { material: Some(material) }
     }
 
-    fn get(&self, _: usize) -> Option<&<Self::Data as Data>::Child> {
+    fn get(&self, _: usize) -> Option<&ChildOf<Self>> {
         None
     }
 
-    fn get_mut(&mut self, _: usize) -> Option<&mut <Self::Data as Data>::Child> {
+    fn get_mut(&mut self, _: usize) -> Option<&mut ChildOf<Self>> {
         None
     }
 
@@ -161,21 +166,25 @@ impl Voxel for SimpleVoxel {
         self.material.is_none()
     }
 
+    fn skin(&self) -> Option<u8> {
+        None
+    }
+
     fn is_detail(&self) -> bool {
         false
     }
 
     fn triangulate<'a, S: Side, C: Context<Self>>(
         &self,
-        mesh: &mut Mesh,
-        ao: &AmbientOcclusion,
+        mesh: &mut Triangulation,
+        ao: &SharedVertexData,
         _: &C,
         origin: Vec3,
         scale: f32,
     ) {
         use crate::triangulate::*;
         if let Some(material) = self.material {
-            triangulate_face::<(), S>(mesh, ao, origin, scale, material);
+            triangulate_face::<S>(mesh, ao, origin, scale, material);
         }
     }
 }
@@ -225,7 +234,7 @@ impl<T: Data> Voxel for NestedVoxel<T> {
     fn visible(&self) -> bool {
         match *self {
             Self::Empty { .. } => false,
-            Self::Detail { ref data, .. } => !data.empty(),
+            Self::Detail { ref data, .. } => data.visible(),
             Self::Material { .. } => true,
             Self::Placeholder => false,
         }
@@ -234,9 +243,18 @@ impl<T: Data> Voxel for NestedVoxel<T> {
     fn render(&self) -> bool {
         match *self {
             Self::Empty { .. } => true,
-            Self::Detail { ref data, .. } => !data.solid(),
+            Self::Detail { ref data, .. } => data.render(),
             Self::Material { .. } => false,
             Self::Placeholder => true,
+        }
+    }
+
+    fn skin(&self) -> Option<u8> {
+        match *self {
+            Self::Empty { .. } => None,
+            Self::Detail { ref data, .. } |
+            Self::Material { ref data, .. } => data.skin(),
+            Self::Placeholder => None,
         }
     }
 
@@ -250,8 +268,8 @@ impl<T: Data> Voxel for NestedVoxel<T> {
 
     fn triangulate<'a, S: Side, C: Context<Self>>(
         &self,
-        mesh: &mut Mesh,
-        ao: &AmbientOcclusion,
+        mesh: &mut Triangulation,
+        shared: &SharedVertexData,
         context: &C,
         origin: Vec3,
         scale: f32,
@@ -260,9 +278,9 @@ impl<T: Data> Voxel for NestedVoxel<T> {
         match *self {
             Self::Empty { .. } => (),
 
-            Self::Detail { ref detail, .. } => triangulate_detail::<Self, S, C>(
+            Self::Detail { ref detail, .. } => triangulate_detail::<S, _, _>(
                 mesh,
-                ao,
+                shared,
                 context,
                 origin,
                 scale,
@@ -270,7 +288,7 @@ impl<T: Data> Voxel for NestedVoxel<T> {
             ),
 
             Self::Material { material, .. } => {
-                triangulate_face::<T, S>(mesh, ao, origin, scale, material)
+                triangulate_face::<S>(mesh, shared, origin, scale, material)
             }
 
             Self::Placeholder => (),

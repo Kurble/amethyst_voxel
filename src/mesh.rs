@@ -3,7 +3,7 @@ use amethyst::{
     core::{ArcThreadPool, Time},
     ecs::prelude::*,
     renderer::{
-        rendy::{command::QueueId, factory::Factory, mesh::MeshBuilder},
+        rendy::{command::QueueId, factory::Factory},
         types::Backend,
     },
 };
@@ -14,8 +14,7 @@ use crate::ambient_occlusion::*;
 use crate::context::*;
 use crate::material::*;
 use crate::model::*;
-use crate::pass::*;
-use crate::triangulate::Mesh;
+use crate::triangulate::Triangulation;
 use crate::voxel::{Data, NestedVoxel, Voxel};
 use crate::world::VoxelWorld;
 
@@ -100,7 +99,10 @@ impl<T: Data> DynamicVoxelMesh<T> {
         DynamicVoxelMesh {
             data: value,
             atlas,
-            transform: scale(&identity(), &(vec3(1.0, 1.0, 1.0) * NestedVoxel::<T>::WIDTH as f32)),
+            transform: scale(
+                &identity(),
+                &(vec3(1.0, 1.0, 1.0) * NestedVoxel::<T>::WIDTH as f32),
+            ),
             parent: None,
             dirty: true,
         }
@@ -114,7 +116,10 @@ impl<T: Data> DynamicVoxelMesh<T> {
         DynamicVoxelMesh {
             data: NestedVoxel::from_iter(data, iter),
             atlas,
-            transform: scale(&identity(), &(vec3(1.0, 1.0, 1.0) * NestedVoxel::<T>::WIDTH as f32)),
+            transform: scale(
+                &identity(),
+                &(vec3(1.0, 1.0, 1.0) * NestedVoxel::<T>::WIDTH as f32),
+            ),
             parent: None,
             dirty: true,
         }
@@ -256,9 +261,7 @@ impl<'a, B: Backend, V: Data + Default> System<'a> for VoxelMeshProcessor<B, V> 
                     let voxels = model
                         .submodels
                         .iter()
-                        .map(|sub| {
-                            (sub, build_voxel::<V>(&model, sub, &mut atlas))
-                        })
+                        .map(|sub| (sub, build_voxel::<V>(&model, sub, &mut atlas)))
                         .collect::<Vec<_>>();
 
                     let context = voxels
@@ -322,7 +325,8 @@ fn build_voxel<V: Data>(
             (index / (submodel.dimensions[0] * submodel.dimensions[1])) % submodel.dimensions[2];
         let z = (index / submodel.dimensions[0]) % submodel.dimensions[1];
 
-        if x < NestedVoxel::<V>::WIDTH && y < NestedVoxel::<V>::WIDTH && z < NestedVoxel::<V>::WIDTH {
+        if x < NestedVoxel::<V>::WIDTH && y < NestedVoxel::<V>::WIDTH && z < NestedVoxel::<V>::WIDTH
+        {
             detail[NestedVoxel::<V>::coord_to_index(x, y, z)] =
                 Voxel::new_filled(Default::default(), material);
         }
@@ -347,55 +351,12 @@ where
     A: AtlasAccess,
     I: IntoIterator<Item = (&'a V, &'c C, &'a Mat4x4)>,
 {
-    let mut mesh = Mesh::default();
+    let mut tri = Triangulation::new(false);
 
     for (voxel, context, transform) in iter {
-        let ao = AmbientOcclusion::build(voxel, context);
-        let start = mesh.pos.len();
-
-        mesh.build(voxel, &ao, context, vec3(0.0, 0.0, 0.0), 1.0);
-
-        for i in start..mesh.pos.len() {
-            let pos: [f32; 3] = mesh.pos[i].0.into();
-            let nml: [f32; 3] = mesh.nml[i].0.into();
-            let tan: [f32; 3] = [mesh.tan[i].0[0], mesh.tan[i].0[1], mesh.tan[i].0[2]];
-            mesh.pos[i] = transform.transform_point(&pos.into()).coords.into();
-            mesh.nml[i] = transform.transform_vector(&nml.into()).into();
-            let tan = transform.transform_vector(&tan.into());
-            mesh.tan[i] = [tan[0], tan[1], tan[2], mesh.tan[i].0[3]].into();
-        }
+        let shared = SharedVertexData::build(voxel, context);
+        tri.append(voxel, &shared, context, vec3(0.0, 0.0, 0.0), 1.0, transform);
     }
 
-    let Mesh {
-        pos,
-        nml,
-        tan,
-        tex,
-        ind,
-    } = mesh;
-
-    let tex: Vec<_> = tex
-        .into_iter()
-        .map(|texturing| {
-            let [u, v] = atlas.coord(texturing.material_id, texturing.side, texturing.coord);
-            Surface {
-                tex_ao: [u, v, texturing.ao],
-            }
-        })
-        .collect();
-
-    if !pos.is_empty() {
-        Some(B::wrap_mesh(
-            MeshBuilder::new()
-                .with_vertices(pos)
-                .with_vertices(nml)
-                .with_vertices(tan)
-                .with_vertices(tex)
-                .with_indices(ind)
-                .build(queue, factory)
-                .unwrap(),
-        ))
-    } else {
-        None
-    }
+    tri.to_mesh(atlas, queue, factory)
 }

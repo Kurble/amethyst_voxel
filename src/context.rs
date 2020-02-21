@@ -6,11 +6,14 @@ use amethyst::core::ecs::storage::GenericReadStorage;
 
 /// Trait for retrieving neighbour information between separate root voxels.
 pub trait Context<T: Voxel> {
-    /// Same as Triangulate::visible, but accepts a relative coordinate for selecting a child voxel.
+    /// Same as `Voxel::visible`, but accepts a relative coordinate for selecting a child voxel.
     fn visible(&self, x: isize, y: isize, z: isize) -> bool;
 
-    /// Same as Triangulate::render, but accepts a relative coordinate for selecting a child voxel.
+    /// Same as `Voxel::render`, but accepts a relative coordinate for selecting a child voxel.
     fn render(&self, x: isize, y: isize, z: isize) -> bool;
+
+    /// Same as `Voxel::skin`, but accepts a relative coordinate for selecting a child voxel.
+    fn skin(&self, x: isize, y: isize, z: isize) -> Option<u8>;
 
     /// Returns a Context for the child at the relative coordinate
     fn child<'a>(
@@ -64,6 +67,20 @@ impl<'a, T: Voxel> Context<T> for VoxelContext<'a, T> {
             false
         } else {
             true
+        }
+    }
+
+    fn skin(&self, x: isize, y: isize, z: isize) -> Option<u8> {
+        if x >= 0
+            && x < T::WIDTH as isize
+            && y >= 0
+            && y < T::WIDTH as isize
+            && z >= 0
+            && z < T::WIDTH as isize
+        {
+            self.voxel.skin()
+        } else {
+            None
         }
     }
 
@@ -138,6 +155,10 @@ impl<'a, P: Voxel> Context<ChildOf<P>> for DetailContext<'a, P> {
         self.find(x, y, z).map(|v| v.render()).unwrap_or(false)
     }
 
+    fn skin(&self, x: isize, y: isize, z: isize) -> Option<u8> {
+        self.find(x, y, z).and_then(|v| v.skin())
+    }
+
     fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, ChildOf<P>> {
         DetailContext::new(self, [x, y, z], self.find(x, y, z))
     }
@@ -200,6 +221,10 @@ where
 
     fn render(&self, x: isize, y: isize, z: isize) -> bool {
         self.find(x, y, z).map(|c| c.render()).unwrap_or(false)
+    }
+
+    fn skin(&self, x: isize, y: isize, z: isize) -> Option<u8> {
+        self.find(x, y, z).and_then(|v| v.skin())
     }
 
     fn child<'b>(&'b self, x: isize, y: isize, z: isize) -> DetailContext<'b, NestedVoxel<V>> {
