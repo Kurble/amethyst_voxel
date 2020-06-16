@@ -5,12 +5,11 @@ authors = ["Bram Buurlage <brambuurlage@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-amethyst = { version="0.13", features = ["vulkan"] }
-nalgebra-glm = "0.4"
+amethyst = { version="0.15", features = ["vulkan"] }
+nalgebra-glm = "0.5.0"
 derivative = "1.0"
 smallvec = "0.6.9"
 failure = "0.1"
-rendy = {version = "^0.3.2", default-features = false, features = ["base", "mesh-obj", "texture-image", "texture-palette", "serde-1"]}
 rand = "0.7"
 byteorder = "1"
 lazy_static = "1.3"

@@ -9,9 +9,9 @@ use amethyst::{
         bundle::{RenderOrder, RenderPlan, RenderPlugin, Target},
         pass::Base3DPassDef,
         Backend, Factory,
+        rendy::graph::render::RenderGroupDesc,
     },
 };
-use rendy::graph::render::RenderGroupDesc;
 
 /// A `RenderPlugin` for forward rendering of 3d voxels.
 /// Generic over 3d pass rendering method.

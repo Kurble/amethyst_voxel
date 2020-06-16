@@ -6,6 +6,7 @@ use amethyst::{
     assets::Handle,
     core::{
         ecs::storage::{GenericReadStorage, GenericWriteStorage},
+        math::Vector3,
         transform::Transform,
     },
     ecs::prelude::*,
@@ -342,7 +343,7 @@ impl<'s, T: Data, S: for<'a> VoxelSource<'a, T> + Component> System<'s> for Worl
                                         let mut mesh =
                                             DynamicVoxelMesh::new(chunk, world.atlas.clone());
                                         let mut transform = Transform::default();
-                                        transform.set_scale(vec3(
+                                        transform.set_scale(Vector3::new(
                                             world.scale,
                                             world.scale,
                                             world.scale,
