@@ -4,6 +4,18 @@ use amethyst::renderer::{
     pass::Base3DPassDef,
     pipeline::{PipelineDescBuilder, PipelinesBuilder},
     pod::{SkinnedVertexArgs, VertexArgs},
+    rendy::{
+        command::{QueueId, RenderPassEncoder},
+        factory::Factory,
+        graph::{
+            render::{PrepareResult, RenderGroup, RenderGroupDesc},
+            GraphContext, NodeBuffer, NodeImage,
+        },
+        hal::{self, device::Device, format::Format, pso},
+        mesh::{AsAttribute, AsVertex, VertexFormat},
+        shader::{Shader, SpirvShader},
+        util::types::vertex::{Normal, Position, Tangent},
+    },
     resources::Tint,
     skinning::{JointCombined, JointTransforms},
     submodules::{DynamicVertexBuffer, EnvironmentSub, MaterialId, MaterialSub, SkinningSub},
@@ -15,18 +27,6 @@ use crate::{material::*, mesh::*};
 use amethyst::core::{
     ecs::{Join, Read, ReadStorage, SystemData, World},
     transform::Transform,
-};
-use rendy::{
-    command::{QueueId, RenderPassEncoder},
-    factory::Factory,
-    graph::{
-        render::{PrepareResult, RenderGroup, RenderGroupDesc},
-        GraphContext, NodeBuffer, NodeImage,
-    },
-    hal::{self, device::Device, format::Format, pso},
-    mesh::{AsAttribute, AsVertex, VertexFormat},
-    shader::{Shader, SpirvShader},
-    util::types::vertex::{Normal, Position, Tangent},
 };
 use smallvec::SmallVec;
 use std::marker::PhantomData;
@@ -353,17 +353,17 @@ where
 }
 
 lazy_static::lazy_static! {
-    static ref VOXEL_VERTEX: SpirvShader = SpirvShader::new(
-        include_bytes!("../compiled/voxels.vert.spv").to_vec(),
+    static ref VOXEL_VERTEX: SpirvShader = SpirvShader::from_bytes(
+        include_bytes!("../compiled/voxels.vert.spv"),
         pso::ShaderStageFlags::VERTEX,
         "main",
-    );
+    ).expect("Failed to load /compiled/voxels.vert.spv");
 
-    static ref VOXEL_VERTEX_SKINNED: SpirvShader = SpirvShader::new(
-        include_bytes!("../compiled/voxels_skinned.vert.spv").to_vec(),
+    static ref VOXEL_VERTEX_SKINNED: SpirvShader = SpirvShader::from_bytes(
+        include_bytes!("../compiled/voxels_skinned.vert.spv"),
         pso::ShaderStageFlags::VERTEX,
         "main",
-    );
+    ).expect("Failed to load /compiled/voxels.vert.spv");
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -405,18 +405,18 @@ fn build_pipelines<B: Backend, T: Base3DPassDef>(
         .with_subpass(subpass)
         .with_framebuffer_size(framebuffer_width, framebuffer_height)
         .with_face_culling(pso::Face::BACK)
-        .with_depth_test(pso::DepthTest::On {
+        .with_depth_test(pso::DepthTest {
             fun: pso::Comparison::Less,
             write: !transparent,
         })
-        .with_blend_targets(vec![pso::ColorBlendDesc(
-            pso::ColorMask::ALL,
-            if transparent {
-                pso::BlendState::PREMULTIPLIED_ALPHA
+        .with_blend_targets(vec![pso::ColorBlendDesc {
+            mask: pso::ColorMask::ALL,
+            blend: if transparent {
+                Some(pso::BlendState::PREMULTIPLIED_ALPHA)
             } else {
-                pso::BlendState::Off
+                None
             },
-        )]);
+        }]);
 
     let pipelines = if skinning {
         let shader_vertex_skinned = unsafe { T::vertex_skinned_shader().module(factory).unwrap() };

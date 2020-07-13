@@ -5,12 +5,16 @@ use crate::pass::Surface;
 use crate::side::*;
 use crate::voxel::*;
 use amethyst::renderer::{
-    rendy::{command::QueueId, factory::Factory, mesh::MeshBuilder},
+    rendy::{
+        command::QueueId,
+        factory::Factory,
+        mesh::MeshBuilder,
+        mesh::{Normal, Position, Tangent},
+    },
     skinning::{JointCombined, JointIds, JointWeights},
     types::{Backend, Mesh},
 };
 use nalgebra_glm::*;
-use rendy::mesh::{Normal, Position, Tangent};
 use std::iter::repeat;
 
 /// Triangulated mesh data created from a single voxel definition.
